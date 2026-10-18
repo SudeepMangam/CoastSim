@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 import httpx
 from ocean import bounds, to_xy, cached, now_iso
+from study_area import StudyArea
 
 OVERPASS = os.getenv('OVERPASS_URL', 'https://overpass-api.de/api/interpreter')
 CACHE = Path(os.getenv('GEO_CACHE', 'data/osm_san_juan.json'))
@@ -24,8 +25,9 @@ KINDS = {('natural', 'wood'): 'forest', ('landuse', 'forest'): 'forest', ('natur
          ('landuse', 'industrial'): 'industrial', ('landuse', 'port'): 'industrial', ('landuse', 'farmland'): 'farm'}
 
 
-def query():
-    b = bounds()
+def query(area=None):
+    area=area or StudyArea()
+    b = area.bounds()
     bb = f"{b['south']:.5f},{b['west']:.5f},{b['north']:.5f},{b['east']:.5f}"
     return f'''[out:json][timeout:90];
 way["building"]({bb});
@@ -47,7 +49,8 @@ def height_m(tags):
     return DEFAULT_HEIGHT_M
 
 
-def parse(data):
+def parse(data,area=None):
+    area=area or StudyArea()
     buildings, cover = [], []
     for e in data.get('elements', []):
         if e.get('type') != 'way':
@@ -55,14 +58,14 @@ def parse(data):
         t = e.get('tags', {})
         if 'building' in t and e.get('bounds'):
             bb = e['bounds']
-            x0, y0 = to_xy(bb['minlat'], bb['minlon'])
-            x1, y1 = to_xy(bb['maxlat'], bb['maxlon'])
+            x0, y0 = area.to_xy(bb['minlat'], bb['minlon'])
+            x1, y1 = area.to_xy(bb['maxlat'], bb['maxlon'])
             w, d = abs(x1 - x0), abs(y1 - y0)
             if w > 0 and d > 0:
                 buildings.append([round((x0 + x1) / 2, 4), round((y0 + y1) / 2, 4), round(w, 4), round(d, 4), round(height_m(t), 1)])
         elif e.get('geometry'):
             kind = next((v for (k, val), v in KINDS.items() if t.get(k) == val), None)
-            pts = [to_xy(g['lat'], g['lon']) for g in e['geometry']]
+            pts = [area.to_xy(g['lat'], g['lon']) for g in e['geometry']]
             if kind and len(pts) >= 4:
                 step = max(1, len(pts) // 150)
                 cover.append({'k': kind, 'r': [[round(x, 3), round(y, 3)] for x, y in pts[::step]]})
@@ -74,27 +77,27 @@ def parse(data):
                          f'Showing the {min(total, MAX_BUILDINGS)} largest of {total} mapped building footprints as axis-aligned boxes.']}
 
 
-async def fetch_geo():
-    if CACHE.exists() and time.time() - CACHE.stat().st_mtime < 30 * 86400:
-        return json.loads(CACHE.read_text())
+async def fetch_geo(area=None):
+    area=area or StudyArea()
+    cache=CACHE.with_name(f"{CACHE.stem}_{'_'.join(map(str,area.key()))}{CACHE.suffix}")
+    if cache.exists() and time.time() - cache.stat().st_mtime < 30 * 86400:
+        return json.loads(cache.read_text())
     async with httpx.AsyncClient(timeout=120, headers={'User-Agent': 'CoastSim-Educational/1.0'}) as c:
-        r = await c.post(OVERPASS, data={'data': query()})
+        r = await c.post(OVERPASS, data={'data': query(area)})
         r.raise_for_status()
-    payload = r.json()
-    if not isinstance(payload, dict) or 'elements' not in payload:
-        raise ValueError('Overpass did not return an elements collection')
-    out = parse(payload)
+    out = parse(r.json(),area)
     try:
-        CACHE.parent.mkdir(parents=True, exist_ok=True)
-        CACHE.write_text(json.dumps(out))
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(out))
     except OSError:
         pass
     return out
 
 
-async def geo_payload():
+async def geo_payload(area=None):
+    area=area or StudyArea()
     try:
-        return await cached('osm', 7 * 86400, fetch_geo)
+        return await cached(('osm',area.key()), 7 * 86400, lambda:fetch_geo(area))
     except Exception as ex:
         return {'status': 'unavailable', 'source': 'OpenStreetMap (unreachable)', 'buildings': [], 'landcover': [],
                 'building_count_total': 0, 'warnings': ['OpenStreetMap data unavailable: ' + (str(ex)[:200] or type(ex).__name__)]}

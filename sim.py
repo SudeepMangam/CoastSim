@@ -7,6 +7,7 @@ vertical diffusion. This is a screening model, not a verified spill model.
 from __future__ import annotations
 import math
 import numpy as np
+from volume import particle_voxels
 
 KINDS=('oil','chemical','microplastic')
 PRESETS={
@@ -102,6 +103,7 @@ def run_member(req, terrain, current_fn, wind_fn, seed, keep_frames=True):
     def make_frame(t):
         active=np.where(state[:n]==0)[0]
         vals,peak=summarize_bins(x[active],y[active],z[active],mass[active],kind)
+        voxels, cloud_peak = particle_voxels(x[active],y[active],z[active],mass[active],kind,smooth=True,terrain=terrain)
         # Uniformly subsample render particles, without changing the mass budget.
         render_limit=int(req.get('render_limit',1750))
         if len(active)>render_limit:
@@ -115,7 +117,8 @@ def run_member(req, terrain, current_fn, wind_fn, seed, keep_frames=True):
         extent=float(max((math.hypot(x[j]-sources[int(source_id[j])]['x'],
                                     y[j]-sources[int(source_id[j])]['y']) for j in active),default=0))
         return {'hour':round(t/3600,2),'points':pts,'beached':beaches,'peak':round(peak,7),
-                'spread_km':round(extent,3),'active_particles':len(active),'budget':mass_budget()}
+                'spread_km':round(extent,3),'active_particles':len(active),'budget':mass_budget(),
+                'voxels':voxels,'cloud_peak':round(cloud_peak,9)}
 
     if keep_frames:frames.append(make_frame(0))
     for i in range(steps):
@@ -153,7 +156,7 @@ def run_member(req, terrain, current_fn, wind_fn, seed, keep_frames=True):
             else:
                 z[ids]+=np.asarray(w)*actual_dt+settle*actual_dt + rng.normal(0,math.sqrt(2*kv*actual_dt),len(ids))
                 z[ids]=-np.abs(z[ids]) # reflect free surface
-            d=-terrain.height(np.clip(x[ids],-terrain.L/2,terrain.L/2),np.clip(y[ids],-terrain.L/2,terrain.L/2))
+            d=-terrain.height(np.clip(x[ids],-terrain.width_km/2,terrain.width_km/2),np.clip(y[ids],-terrain.height_km/2,terrain.height_km/2))
             land=d<=max(0.01,0.2 if surf else 0.01)
             if np.any(land):
                 beach=land&(rng.random(len(ids))<req['beach_probability'])
@@ -168,7 +171,7 @@ def run_member(req, terrain, current_fn, wind_fn, seed, keep_frames=True):
                 # Reflect across seabed; robust for large stochastic excursions.
                 z[ids[deep]]=-d[deep]+np.abs(-d[deep]-z[ids[deep]])
                 z[ids[deep]]=np.minimum(-0.02,z[ids[deep]])
-            outside=(abs(x[ids])>terrain.L/2)|(abs(y[ids])>terrain.L/2)
+            outside=(abs(x[ids])>terrain.width_km/2)|(abs(y[ids])>terrain.height_km/2)
             state[ids[outside]]=2
             if half_life>0:
                 still=state[ids]==0

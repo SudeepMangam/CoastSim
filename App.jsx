@@ -1,6 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Scene from './Scene.jsx'
 import { api } from './api.js'
+
+const DEFAULT_AREA = { center_lat: 18.49, center_lon: -66.08, width_km: 16.5, height_km: 16.5 }
+const KY = 111.195
+const within = (lat, lon, area) => {
+  const kx = KY * Math.cos(area.center_lat * Math.PI / 180)
+  return Math.abs((lon - area.center_lon) * kx) < area.width_km / 2 &&
+         Math.abs((lat - area.center_lat) * KY) < area.height_km / 2
+}
 
 const PRESETS = {
   oil: { depth_m: '0.2', half_life_h: '72', kh: '2', kz: '0', windage: '0.025', beach_probability: '0.7' },
@@ -66,6 +74,13 @@ export default function App() {
     ensemble_current_sd: '0.02', ensemble_wind_sd: '0.2', seed: '42',
   })
   const [terrain, setTerrain] = useState(null)
+  const activeLoad = useRef(0)
+  const [area, setArea] = useState(DEFAULT_AREA)
+  const [areaDraft, setAreaDraft] = useState(DEFAULT_AREA)
+  const [areaBusy, setAreaBusy] = useState(false)
+  const [plumeMode, setPlumeMode] = useState('particles')
+  const [placingRelease, setPlacingRelease] = useState(false)
+  const [selectedRelease, setSelectedRelease] = useState(0)
   const [geo, setGeo] = useState(null)
   const [conditions, setConditions] = useState(null)
   const [health, setHealth] = useState(null)
@@ -110,19 +125,48 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKey)
   }, [])
 
-  const load = async () => {
+  const load = async (activeArea = DEFAULT_AREA) => {
+    const loadId = ++activeLoad.current
     setLoading(true); setError('')
-    const [t, c, h] = await Promise.allSettled([api.terrain(), api.conditions(), api.health()])
+    const [t, c, h] = await Promise.allSettled([api.terrain(activeArea), api.conditions(), api.health()])
+    if (loadId !== activeLoad.current) return
     if (t.status === 'fulfilled') setTerrain(t.value)
     else setError(`Terrain request failed: ${t.reason.message}`)
     if (h.status === 'fulfilled') setHealth(h.value)
     else setError(old => [old, `Backend health check failed: ${h.reason.message}`].filter(Boolean).join('\n'))
     if (c.status === 'fulfilled') setConditions(c.value)
     else setError(old => [old, `Ocean conditions request failed: ${c.reason.message}`].filter(Boolean).join('\n'))
-    api.geo().then(setGeo).catch(e => setGeo({ status: 'unavailable', buildings: [], landcover: [], warnings: [e.message] }))
+    api.geo(activeArea).then(data => { if (loadId === activeLoad.current) setGeo(data) })
+      .catch(e => { if (loadId === activeLoad.current) setGeo({ status: 'unavailable', buildings: [], landcover: [], warnings: [e.message] }) })
     setLoading(false)
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(DEFAULT_AREA) }, [])
+  const applyArea = async () => {
+    const a = Object.fromEntries(Object.entries(areaDraft).map(([key, val]) => [key, Number(val)]))
+    if (!Object.values(a).every(Number.isFinite) || a.center_lat < 18.40 || a.center_lat > 18.56 ||
+        a.center_lon < -66.17 || a.center_lon > -65.99 || a.width_km < 5 || a.width_km > 24 ||
+        a.height_km < 5 || a.height_km > 24) {
+      setError('Study area center or dimensions are outside the allowed San Juan bounds.'); return
+    }
+    setAreaBusy(true); setArea(a); setTerrain(null); setGeo(null); setResult(null); setFrame(0); setPlaying(false)
+    // Moving the domain does not magically relocate an existing source.
+    setF(old => within(Number(old.lat), Number(old.lon), a) ? old :
+      { ...old, lat: String(a.center_lat), lon: String(a.center_lon) })
+    setReleases(old => old.filter(item => within(Number(item.lat), Number(item.lon), a)))
+    setSelectedRelease(0); setPlacingRelease(false)
+    try { await load(a) } finally { setAreaBusy(false) }
+  }
+  const moveRelease = (index, lat, lon) => {
+    if (!within(lat, lon, area)) return
+    if (index === 0) setF(old => ({ ...old, lat: lat.toFixed(5), lon: lon.toFixed(5) }))
+    else setReleases(old => old.map((item, i) => i === index - 1 ?
+      { ...item, lat: lat.toFixed(5), lon: lon.toFixed(5) } : item))
+    setEdited(true); setResult(null); setFrame(0); setPlaying(false)
+  }
+  const releasePoints = [
+    { lat: Number(f.lat), lon: Number(f.lon), depth_m: Number(f.depth_m) },
+    ...releases.map(item => ({ lat: Number(item.lat), lon: Number(item.lon), depth_m: Number(item.depth_m) }))
+  ]
   useEffect(() => {
     if (!playing || !result?.frames?.length) return
     const timer = setInterval(() => setFrame(old => {
@@ -139,6 +183,7 @@ export default function App() {
       const payload = Object.fromEntries(Object.entries(f).map(([k, v]) => [
         k, ['mode', 'pollutant'].includes(k) ? v : (v === '' ? null : Number(v)),
       ]))
+      Object.assign(payload, area)
       payload.additional_releases = releases.map(item => ({
         lat: Number(item.lat), lon: Number(item.lon), depth_m: Number(item.depth_m),
         rate_kg_s: Number(item.rate_kg_s), duration_h: Number(item.duration_h),
@@ -204,6 +249,9 @@ export default function App() {
   return <div className="app">
     <div className="sceneStage">
       <Scene terrain={terrain} result={result} frame={sceneFrame} vex={vex}
+        plumeMode={plumeMode} releasePoints={releasePoints} placingRelease={placingRelease}
+        selectedRelease={selectedRelease} onReleaseChange={moveRelease}
+        onReleasePlacementDone={() => setPlacingRelease(false)}
         showSurface={showSurface} showBounds={showBounds} showTerrain={showTerrain}
         showBuildings={showBuildings} showVegetation={showVegetation} showContours={showContours} showCurtains={showCurtains} geo={geo}
         currentArrow={currentVector} cameraMode={cameraMode} cameraResetKey={cameraResetKey} />
@@ -214,7 +262,7 @@ export default function App() {
         <span className="brandGlyph" aria-hidden="true">C</span>
         <div className="brandText"><strong>CoastSim</strong><span>San Juan, Puerto Rico</span></div>
         <div className="headerDivider" />
-        <span className="domainSize">16.5 × 16.5 km{maxDepth ? ` · ${Math.round(maxDepth).toLocaleString()} m deep` : ''}</span>
+        <span className="domainSize">{area.width_km} × {area.height_km} km{maxDepth ? ` · ${Math.round(maxDepth).toLocaleString()} m deep` : ''}</span>
       </div>
       <nav className="headerActions" aria-label="Application controls">
         <span className={`sourceBadge ${terrain?.status === 'synthetic' || !terrain ? 'sourceWarn' : 'sourceOk'}`} title="Seafloor data source">
@@ -223,7 +271,7 @@ export default function App() {
         <button type="button" className="toolbarButton" onClick={() => openTab('data')}>Data</button>
         <button type="button" className="toolbarButton" aria-expanded={layersOpen} onClick={() => { setLayersOpen(x => !x); setDrawerOpen(false) }}>Layers</button>
         <button type="button" className="toolbarButton" aria-expanded={drawerOpen} onClick={() => { setDrawerOpen(x => !x); setTab('scenario'); setLayersOpen(false) }}>Configure</button>
-        <button type="button" className="toolbarButton primaryToolbar" disabled={busy || !terrain} onClick={run}>{busy ? 'Simulating…' : 'Run simulation'}</button>
+        <button type="button" className="toolbarButton primaryToolbar" disabled={busy || areaBusy || loading || !terrain} onClick={run}>{busy ? 'Simulating…' : 'Run simulation'}</button>
       </nav>
     </header>
 
@@ -239,6 +287,19 @@ export default function App() {
       <label><input type="checkbox" checked={showSurface} onChange={e => setShowSurface(e.target.checked)} /> Water surface</label>
       <label><input type="checkbox" checked={showContours} onChange={e => setShowContours(e.target.checked)} /> Depth contours</label>
       <label><input type="checkbox" checked={showCurtains} onChange={e => setShowCurtains(e.target.checked)} /> Water column sides</label>
+      <div className="layerGroupTitle">Plume display</div>
+      <div className="plumeChoice" role="group" aria-label="Plume display mode">
+        <button type="button" className={plumeMode === 'particles' ? 'selected' : ''} onClick={() => setPlumeMode('particles')}>Particles</button>
+        <button type="button" className={plumeMode === 'cloud' ? 'selected' : ''} onClick={() => setPlumeMode('cloud')}>3D cloud</button>
+      </div>
+      <div className="layerNote">Cloud colors show an kernel-smoothed, mass-weighted concentration in model bins, not measured contamination.</div>
+      <div className="layerGroupTitle">Study area</div>
+      <label className="areaField">Center latitude<input type="number" step="0.001" min="18.40" max="18.56" value={areaDraft.center_lat} onChange={e => setAreaDraft(old => ({ ...old, center_lat: e.target.value }))}/></label>
+      <label className="areaField">Center longitude<input type="number" step="0.001" min="-66.17" max="-65.99" value={areaDraft.center_lon} onChange={e => setAreaDraft(old => ({ ...old, center_lon: e.target.value }))}/></label>
+      <label className="areaField">Width (km)<input type="number" step="0.5" min="5" max="24" value={areaDraft.width_km} onChange={e => setAreaDraft(old => ({ ...old, width_km: e.target.value }))}/></label>
+      <label className="areaField">Length (km)<input type="number" step="0.5" min="5" max="24" value={areaDraft.height_km} onChange={e => setAreaDraft(old => ({ ...old, height_km: e.target.value }))}/></label>
+      <button className="applyAreaButton" type="button" disabled={areaBusy || busy} onClick={applyArea}>{areaBusy ? 'Loading area…' : 'Apply study area'}</button>
+      <button className="resetAreaButton" type="button" onClick={() => setAreaDraft(DEFAULT_AREA)}>Reset size &amp; center</button>
       <label><input type="checkbox" checked={showBounds} onChange={e => setShowBounds(e.target.checked)} /> Study boundaries</label>
       <label><input type="checkbox" checked={currentArrow} onChange={e => setCurrentArrow(e.target.checked)} /> Current direction</label>
       <div className="layerNote">Seabed &amp; land: {terrain?.source || 'loading'}.<br />Buildings &amp; land cover: {geo?.status === 'osm' ? `OpenStreetMap, ${geo.buildings.length.toLocaleString()} of ${geo.building_count_total.toLocaleString()} footprints` : geo ? 'OpenStreetMap unavailable, so buildings are illustrative only' : 'loading'}.</div>
@@ -254,14 +315,28 @@ export default function App() {
       <small>Colour scale is compressed so nearshore depth stays readable. Lines at 10, 25, 50, 100, 250, 500 and 1,000 m. Hover the seabed to read depth.</small>
     </div>}
 
-    <div className="orbitHint">Drag to rotate · Right-drag to pan · Scroll to zoom</div>
+    <div className="releaseToolbar">
+      <label htmlFor="placeSource">Move source</label>
+      <select id="placeSource" value={Math.min(selectedRelease, releases.length)} onChange={e => setSelectedRelease(+e.target.value)}>
+        <option value={0}>Primary</option>
+        {releases.map((item, i) => <option key={item.id} value={i + 1}>Source {i + 2}</option>)}
+      </select>
+      <button type="button" className={placingRelease ? 'active' : ''} onClick={() => setPlacingRelease(x => !x)}>{placingRelease ? 'Cancel placement' : 'Click water to place'}</button>
+    </div>
+    <div className="orbitHint">Drag yellow markers to move · Left drag to rotate elsewhere · Right drag to pan</div>
     <div className="cameraQuick" aria-label="Camera controls">
       <button type="button" title="Zoom to San Juan coast" onClick={() => {setCameraMode('coast');setCameraResetKey(x=>x+1)}}>Focus coast</button>
       <button type="button" title="Show the whole block" onClick={() => {setCameraMode('block');setCameraResetKey(x=>x+1)}}>Full block</button>
     </div>
     {!result && <div className="canvasHint"><strong>Ready to simulate</strong><span>Choose a pollutant and configure its release.</span><button onClick={() => openTab('scenario')}>Open setup</button></div>}
-    {result && <div className="miniLegend" aria-label="Particle concentration legend"><span>Relative bin concentration</span><div className="legendGradient"/><div className="legendEnds"><span>Low</span><span>High</span></div><small className="shoreLegend">Pale particles: shoreline contact</small></div>}
+    {result && plumeMode === 'particles' && <div className="miniLegend" aria-label="Particle concentration legend"><span>Relative bin concentration</span><div className="legendGradient"/><div className="legendEnds"><span>Low</span><span>High</span></div><small className="shoreLegend">Pale particles: shoreline contact</small></div>}
 
+    {result && plumeMode === 'cloud' && <div className="cloudLegend">
+      <strong>3D concentration estimate</strong>
+      <div className="cloudScale"/>
+      <div className="legendEnds"><span>0</span><span>{format(sceneFrame?.cloud_peak || 0, 6)} {result.concentration_unit}</span></div>
+      <small>Colors are relative to this frame. {result.concentration_unit} · kernel-smoothed particle-bin estimate, not field-validated. Voxel size: 350 m × 350 m × 8 m (oil: surface).</small>
+    </div>}
     {drawerOpen && <>
       <button type="button" className="drawerScrim" aria-label="Close panel" onClick={() => setDrawerOpen(false)}/>
       <aside className="controlDrawer" aria-label="Simulation controls">
@@ -379,7 +454,7 @@ export default function App() {
             </>}
           </>}
         </div>
-        {tab === 'scenario' && <div className="drawerFooter"><button className="runFromDrawer" disabled={busy || !terrain} onClick={run}>{busy ? 'Simulating…' : 'Run simulation'}</button></div>}
+        {tab === 'scenario' && <div className="drawerFooter"><button className="runFromDrawer" disabled={busy || areaBusy || loading || !terrain} onClick={run}>{busy ? 'Simulating…' : 'Run simulation'}</button></div>}
       </aside>
     </>}
 

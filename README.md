@@ -1,3 +1,6 @@
+> **New test build:** Interactive release placement, cloud plume rendering, and adjustable geographic study area are documented in [INTERACTIVE_FEATURES_TESTING.md](INTERACTIVE_FEATURES_TESTING.md).
+> This build has backend and JSX syntax tests only; run `npm run build` and WebGL tests locally before publishing.
+
 # CoastSim — San Juan (Puerto Rico) pollution dispersion simulator
 
 React + Three.js and FastAPI. Educational, physics-based **virtual** pollutant transport across a fixed **16.5 × 16.5 km horizontal** coastal square centered at **18.49° N, 66.08° W**. The Three.js scene has a **16.5 km vertical wireframe volume**, but the ocean stops at the actual modeled seabed: the cube is a visualization boundary, not 16.5 km of water.
@@ -153,3 +156,11 @@ npm run dev
 In another terminal, start FastAPI with `python -m uvicorn main:app --reload --port 8000`. See the commands at the top for setting up Python.
 
 The Python suite passed **22 tests** in the authoring environment. The JSX source passed syntax parsing. A full npm/Vite build and browser rendering test could **not** be performed there because network access to the npm registry failed. Validate the production frontend build on your machine.
+
+
+## Accuracy update: real San Juan data and a shallower block
+
+- **Block height** now follows the data (deepest seabed to highest land, plus a margin) instead of a fixed 16.5 km. Horizontal size stays 16.5 × 16.5 km. Vertical exaggeration defaults to 3x and is display-only.
+- **Terrain** is requested first from the NOAA NCEI DEM Global Mosaic (best-available coastal DEMs, about 15 m cells here), then falls back to ETOPO 2022 (about 450 m), then to a labelled synthetic seabed. `DEM_PATH` still overrides everything. `/api/terrain` defaults to 201 x 201 points; simulations use 161 x 161.
+- **Buildings and land cover** come from OpenStreetMap via the Overpass API (`GET /api/geo`): building footprints (largest 15,000, axis-aligned boxes, heights from OSM tags or an 8 m default), plus forest, scrub, grass, wetland, beach and industrial polygons that colour the terrain. Trees are placed only inside mapped vegetation. If OSM is unreachable the app says so and shows illustrative buildings instead. Results are cached in `data/osm_san_juan.json` for 30 days; set `OVERPASS_URL` to use another Overpass server.
+- Not verified against the live NOAA and Overpass servers from the build environment; tests use mocked responses.

@@ -14,6 +14,7 @@ import sim
 from terrain import load_terrain
 from geodata import geo_payload
 from velocity_field import load_field
+from study_area import StudyArea
 
 app=FastAPI(title='San Juan CoastSim',version='1.0.0',description='Educational Lagrangian dispersion simulator with NOAA and Open-Meteo data.')
 app.add_middleware(CORSMiddleware,allow_origins=['http://localhost:5173','http://127.0.0.1:5173'],allow_methods=['GET','POST'],allow_headers=['Content-Type'])
@@ -25,15 +26,25 @@ def health():
             'local_dem':bool(os.getenv('DEM_PATH')),'model3d_configured':bool(os.getenv('OCEAN_NETCDF_PATH'))}
 
 
+def query_area(center_lat:float=Query(18.49,ge=18.40,le=18.56),
+               center_lon:float=Query(-66.08,ge=-66.17,le=-65.99),
+               width_km:float=Query(16.5,ge=5,le=24),
+               height_km:float=Query(16.5,ge=5,le=24)):
+    return StudyArea(center_lat, center_lon, width_km, height_km)
+
+
+from fastapi import Depends
+
+
 @app.get('/api/terrain')
-async def terrain_grid(n:int=Query(201,ge=41,le=401)):
-    return (await load_terrain(n)).json()
+async def terrain_grid(n:int=Query(201,ge=41,le=401), area:StudyArea=Depends(query_area)):
+    return (await load_terrain(n,area)).json()
 
 
 @app.get('/api/geo')
-async def geo():
-    """OpenStreetMap building outlines and land cover (never invented; empty if the service is unreachable)."""
-    return await geo_payload()
+async def geo(area:StudyArea=Depends(query_area)):
+    """OpenStreetMap building outlines and land cover for selected study area."""
+    return await geo_payload(area)
 
 
 @app.get('/api/conditions')
@@ -90,6 +101,10 @@ class SimRequest(BaseModel):
     ensemble_current_sd:float=Field(0.02,ge=0,le=.5)
     ensemble_wind_sd:float=Field(0.2,ge=0,le=5)
     seed:int=Field(42,ge=0,le=2147483647)
+    center_lat:float=Field(18.49,ge=18.40,le=18.56)
+    center_lon:float=Field(-66.08,ge=-66.17,le=-65.99)
+    width_km:float=Field(16.5,ge=5,le=24)
+    height_km:float=Field(16.5,ge=5,le=24)
 
     @model_validator(mode='after')
     def check_manual(self):
@@ -115,16 +130,19 @@ def closest_start(series):
 
 @app.post('/api/simulate')
 async def simulate(r:SimRequest):
-    terrain=await load_terrain(161)
-    x,y=ocean.to_xy(r.lat,r.lon)
+    area=StudyArea(r.center_lat,r.center_lon,r.width_km,r.height_km)
+    if r.mode=='model3d' and area!=StudyArea():
+        raise HTTPException(422,'The current optional 3D NetCDF adapter covers the default domain only; restore the 16.5 km San Juan preset or supply a regridded model adapter.')
+    terrain=await load_terrain(161) if area==StudyArea() else await load_terrain(161,area)
+    x,y=area.to_xy(r.lat,r.lon)
     release_defs = [{'x':x, 'y':y, 'depth_m':r.depth_m,
                      'rate_kg_s':r.rate_kg_s, 'duration_h':r.duration_h}]
     for release in r.additional_releases:
-        px, py = ocean.to_xy(release.lat, release.lon)
+        px, py = area.to_xy(release.lat, release.lon)
         release_defs.append({'x':px,'y':py,'depth_m':release.depth_m,
                              'rate_kg_s':release.rate_kg_s,'duration_h':release.duration_h})
-    if any(abs(a['x']) >= ocean.L_KM / 2 or abs(a['y']) >= ocean.L_KM / 2 for a in release_defs):
-        raise HTTPException(422,'All releases must be inside the 16.5 × 16.5 km San Juan region.')
+    if any(not area.contains_xy(a['x'],a['y']) for a in release_defs):
+        raise HTTPException(422,'All release positions must be inside the selected study-area bounds.')
     projected_particles = math.ceil(r.hours * 3600 / 300) * r.particles_per_step * len(release_defs) * r.members
     if projected_particles > 250000:
         raise HTTPException(422, f'Too many particles across ensemble ({projected_particles:,} > 250,000). Reduce particles, members, hours or sources.')
@@ -146,7 +164,9 @@ async def simulate(r:SimRequest):
                 wind_fn=lambda s:tuple(ocean.wind_components(sim.interp_at(s,wind,'wind_speed_10m',start),sim.interp_at(s,wind,'wind_direction_10m',start)))
             else:wind_fn=lambda s:(0.,0.)
             sources={'currents':'Open-Meteo surface ocean forecast (~8 km)','wind':'Open-Meteo forecast' if r.windage>0 else 'Not applied',
-                     'terrain':terrain.source,'current_type':'forecast','forecast_start':datetime.fromtimestamp(start,timezone.utc).isoformat()}
+                     'terrain':terrain.source,'current_type':'forecast',
+                     'warnings':['The single representative surface-current forecast is coarse and does not resolve the selected study area.'],
+                     'forecast_start':datetime.fromtimestamp(start,timezone.utc).isoformat()}
         elif r.mode=='model3d':
             path=os.getenv('OCEAN_NETCDF_PATH','').strip()
             if not path:raise ValueError('Set OCEAN_NETCDF_PATH to a local CF NetCDF model file and restart the API.')
@@ -192,7 +212,7 @@ async def simulate(r:SimRequest):
                           'additional_release_depth_m':[item['depth_m'] for item in release_defs[1:]],
                           'release_count':len(release_defs), 'particles_per_step':r.particles_per_step,
                           'render_limit':r.render_limit,
-                          'settling_ms':settling,'horizontal_km':ocean.L_KM},
+                          'settling_ms':settling,'horizontal_km':area.width_km,'study_area':area.json()},
                 'terrain_warning':terrain.warnings,**results}
     except (ValueError,FloatingPointError) as ex:
         raise HTTPException(422,str(ex)) from ex

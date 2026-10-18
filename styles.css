@@ -274,3 +274,23 @@ button:not(:disabled):active { transform: translateY(1px); }
 @media (max-width: 680px) { .depthLegend { display: none; } }
 
 .layerNote { margin: 8px 0 2px; padding-top: 10px; border-top: 1px solid var(--glass-line); font-size: 10px; line-height: 1.55; color: #8fb0c0; }
+
+/* Interactive release, cloud modes and constrained study-area setup */
+.layersPopover { width: 292px; max-height: calc(100dvh - 170px); overflow-y: auto; right: 120px; }
+.layersPopover .areaField { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 4px 0; }
+.areaField input { width: 104px; padding: 6px; text-align: right; color: #eef8fb; border: 1px solid #426476; border-radius: 6px; background: #0a202f; }
+.layerGroupTitle { color: #8cd9ee; font-size: 10px; font-weight: 750; letter-spacing: .12em; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); text-transform: uppercase; }
+.plumeChoice { display: flex; gap: 7px; margin-top: 10px; }
+.plumeChoice button, .applyAreaButton, .resetAreaButton { flex: 1; border-radius: 7px; padding: 8px 6px; border: 1px solid #416073; background: #102c3d; color: #d7f2fb; font-size: 11px; }
+.plumeChoice button.selected, .applyAreaButton { background: #27738c; border-color: #86d9eb; color: #fff; }
+.layersPopover .applyAreaButton { width: 100%; margin-top: 9px; }
+.layersPopover .resetAreaButton { width: 100%; margin-top: 5px; background: transparent; }
+.releaseToolbar { position: absolute; z-index: 4; top: 88px; left: 22px; display: flex; align-items: center; gap: 7px; background: rgba(8, 25, 38, .88); border: 1px solid var(--line); border-radius: 9px; padding: 7px; font-size: 11px; box-shadow: 0 10px 24px #0005; }
+.releaseToolbar select { color: white; background: #102e40; border: 1px solid #456879; border-radius: 5px; padding: 5px; }
+.releaseToolbar button { color: #f7e8a5; background: #12364a; border: 1px solid #937e41; border-radius: 5px; padding: 6px; font-size: 11px; }
+.releaseToolbar button.active { background: #715d29; }
+.cloudLegend { position: absolute; z-index: 3; left: 22px; bottom: 126px; width: 230px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: rgba(7, 25, 39, .92); box-shadow: 0 14px 34px #0007; }
+.cloudLegend strong { font-size: 11px; color: #d9edf6; }
+.cloudLegend small { display: block; margin-top: 8px; font-size: 9px; line-height: 1.6; color: #abc2d0; }
+.cloudScale { margin-top: 9px; height: 9px; border-radius: 6px; background: linear-gradient(90deg, #001c79, #1060e4, #44dbcc, #ffe04d, #ed1c24); }
+@media(max-width: 760px) { .releaseToolbar { top: 140px; left: 12px; } .layersPopover { right: 12px; } }

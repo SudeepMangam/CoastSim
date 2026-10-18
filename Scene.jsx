@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
 // Distances are km on the scene axes. The backend sends terrain and particle z in metres.
-// The block is 16.5 km wide but only as tall as the data: deepest seabed to highest land (plus a margin).
+// The block has configurable width/length and fits its vertical size to the data: deepest seabed to highest land (plus a margin).
 // Updated whenever terrain or vertical exaggeration changes.
 const BOX = { top: 1, bottom: -2 }
 function fitBox(terrain, vex) {
@@ -48,9 +48,10 @@ function labelSprite(text, color = '#d9e7e9') {
   return sprite
 }
 function sampleGrid(terrain, x, y) {
-  const { n, L, h } = terrain
-  const fx = clamp((x / L + .5) * (n - 1), 0, n - 1.00001)
-  const fy = clamp((y / L + .5) * (n - 1), 0, n - 1.00001)
+  const { n, h } = terrain
+  const W = terrain.width_km || terrain.L, H = terrain.height_km || terrain.L
+  const fx = clamp((x / W + .5) * (n - 1), 0, n - 1.00001)
+  const fy = clamp((y / H + .5) * (n - 1), 0, n - 1.00001)
   const ix = Math.floor(fx), iy = Math.floor(fy), a = fx - ix, b = fy - iy
   const v00 = h[iy * n + ix], v10 = h[iy * n + ix + 1]
   const v01 = h[(iy + 1) * n + ix], v11 = h[(iy + 1) * n + ix + 1]
@@ -64,8 +65,8 @@ function terrainTexture(terrain, geo) {
   const rng = randomGenerator(58734)
   for (let j = 0; j < size; j++) {
     for (let i = 0; i < size; i++) {
-      const x = ((i + .5) / size - .5) * terrain.L
-      const y = (.5 - (j + .5) / size) * terrain.L
+      const x = ((i + .5) / size - .5) * (terrain.width_km || terrain.L)
+      const y = (.5 - (j + .5) / size) * (terrain.height_km || terrain.L)
       const h = sampleGrid(terrain, x, y)
       const noise = (rng() - .5) * 25 + Math.sin(x * 35 + Math.cos(y * 25)) * 6
       let rgb
@@ -81,7 +82,7 @@ function terrainTexture(terrain, geo) {
     }
   }
   ctx.putImageData(pixels, 0, 0)
-  if (geo?.status === 'osm') paintLandcover(ctx, size, terrain.L, geo)
+  if (geo?.status === 'osm') paintLandcover(ctx, size, terrain.width_km || terrain.L, terrain.height_km || terrain.L, geo)
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   texture.anisotropy = 4
@@ -132,8 +133,9 @@ function waterMaterial(maxD, curtain) {
 }
 function waterCurtains(terrain, vex) {
   // Vertical cross-sections on the four block faces: the water column from surface down to the seabed.
-  const { n, L, h } = terrain, pos = [], dep = []
-  const at = (ix, iy) => ({ x: (ix / (n - 1) - .5) * L, y: (iy / (n - 1) - .5) * L, h: h[iy * n + ix] })
+  const { n, h } = terrain, pos = [], dep = []
+  const W = terrain.width_km || terrain.L, H = terrain.height_km || terrain.L
+  const at = (ix, iy) => ({ x: (ix / (n - 1) - .5) * W, y: (iy / (n - 1) - .5) * H, h: h[iy * n + ix] })
   const sides = [k => at(k, 0), k => at(k, n - 1), k => at(0, k), k => at(n - 1, k)]
   for (const side of sides) for (let k = 0; k < n - 1; k++) {
     const a = side(k), b = side(k + 1)
@@ -158,13 +160,13 @@ function pointInRing(x, y, ring) {
   }
   return inside
 }
-function paintLandcover(ctx, size, L, geo) {
+function paintLandcover(ctx, size, W, H, geo) {
   // Real OSM polygons painted over the elevation colours, in a fixed order so small features stay visible.
   const order = ['farm', 'industrial', 'grass', 'scrub', 'forest', 'wetland', 'beach', 'water']
   const polys = [...(geo?.landcover || [])].sort((a, b) => order.indexOf(a.k) - order.indexOf(b.k))
   for (const p of polys) {
     ctx.beginPath()
-    p.r.forEach(([x, y], i) => { const px = (x / L + .5) * size, py = (.5 - y / L) * size; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py) })
+    p.r.forEach(([x, y], i) => { const px = (x / W + .5) * size, py = (.5 - y / H) * size; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py) })
     ctx.closePath(); ctx.fillStyle = LAND_COLORS[p.k] || '#6c9a55'; ctx.globalAlpha = p.k === 'water' ? .55 : .9; ctx.fill()
   }
   ctx.globalAlpha = 1
@@ -205,9 +207,10 @@ function buildRealCity(terrain, vex, geo, buildingGroup, vegetationGroup) {
 }
 function clippedWaterMesh(terrain) {
   // Triangles clipped against the zero-elevation shoreline, so water never covers land.
-  const { n, L, h } = terrain
+  const { n, h } = terrain
+  const W = terrain.width_km || terrain.L, H = terrain.height_km || terrain.L
   const positions = [], normals = [], depths = []
-  const corner = (ix, iy) => ({ x: (ix / (n - 1) - .5) * L, y: (iy / (n - 1) - .5) * L, h: h[iy * n + ix] })
+  const corner = (ix, iy) => ({ x: (ix / (n - 1) - .5) * W, y: (iy / (n - 1) - .5) * H, h: h[iy * n + ix] })
   function triangle(a, b, c) {
     const original = [a, b, c], inside = []
     for (let k = 0; k < 3; k++) {
@@ -237,8 +240,8 @@ function buildIllustrativeCity(terrain, vex, buildingGroup, vegetationGroup) {
   const rng = randomGenerator(20261017)
   const buildings = [], trees = []
   for (let trial = 0; trial < 6500 && (buildings.length < 220 || trees.length < 420); trial++) {
-    const x = (rng() - .5) * (terrain.L - .35)
-    const y = (rng() - .5) * (terrain.L - .35)
+    const x = (rng() - .5) * ((terrain.width_km || terrain.L) - .35)
+    const y = (rng() - .5) * ((terrain.height_km || terrain.L) - .35)
     const elev = sampleGrid(terrain, x, y)
     if (elev < 12 || elev > 360) continue
     const sx = Math.abs(sampleGrid(terrain, x + .08, y) - sampleGrid(terrain, x - .08, y))
@@ -283,7 +286,9 @@ function buildIllustrativeCity(terrain, vex, buildingGroup, vegetationGroup) {
 }
 
 export default function Scene({ terrain, result, frame, vex = 1, showSurface = true, showBounds = true,
-  showTerrain = true, showBuildings = true, showVegetation = true, showContours = true, showCurtains = true, geo = null, currentArrow, cameraMode = 'coast', cameraResetKey = 0 }) {
+  showTerrain = true, showBuildings = true, showVegetation = true, showContours = true, showCurtains = true, geo = null, currentArrow, cameraMode = 'coast', cameraResetKey = 0,
+  plumeMode = 'particles', releasePoints = [], placingRelease = false, selectedRelease = 0,
+  onReleaseChange = () => {}, onReleasePlacementDone = () => {} }) {
   const host = useRef(null)
   const objects = useRef(null)
   const terrainGroupRef = useRef(null)
@@ -291,6 +296,9 @@ export default function Scene({ terrain, result, frame, vex = 1, showSurface = t
   const canopyRef = useRef(null)
   const waterUniforms = useRef(null)
   const [probe, setProbe] = useState(null)
+  const eventData = useRef({})
+  eventData.current = { releasePoints, placingRelease, selectedRelease, onReleaseChange, onReleasePlacementDone, terrain }
+  const releaseMeshes = useRef([])
 
   useEffect(() => {
     const el = host.current
@@ -315,14 +323,66 @@ export default function Scene({ terrain, result, frame, vex = 1, showSurface = t
     const sun = new THREE.DirectionalLight('#fff0d4', 2.3)
     sun.position.set(-6, -10, 16); scene.add(sun)
     const base = new THREE.Group(), plume = new THREE.Group(), extras = new THREE.Group()
-    scene.add(base, plume, extras)
+    const releasesGroup = new THREE.Group()
+    scene.add(base, plume, extras, releasesGroup)
     const resize = () => {
       const w = Math.max(1, el.clientWidth), h = Math.max(1, el.clientHeight)
       renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix()
     }
     const observer = new ResizeObserver(resize)
     observer.observe(el); resize()
-    objects.current = { scene, renderer, camera, controls, base, plume, extras }
+    objects.current = { scene, renderer, camera, controls, base, plume, extras, releasesGroup }
+    const xyPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)
+    let interaction = null
+    const canvasPos = e => {
+      const bounds = renderer.domElement.getBoundingClientRect()
+      ndc.set(((e.clientX - bounds.left) / bounds.width) * 2 - 1,
+              -((e.clientY - bounds.top) / bounds.height) * 2 + 1)
+      ray.setFromCamera(ndc, camera)
+    }
+    const placeAt = (e, index) => {
+      const terrain = eventData.current.terrain
+      if (!terrain) return false
+      canvasPos(e)
+      const hit = new THREE.Vector3()
+      if (!ray.ray.intersectPlane(xyPlane, hit)) return false
+      const W = terrain.width_km || terrain.L, H = terrain.height_km || terrain.L
+      if (Math.abs(hit.x) >= W / 2 || Math.abs(hit.y) >= H / 2) return false
+      const source = eventData.current.releasePoints[index]
+      if (!source || sampleGrid(terrain, hit.x, hit.y) >= -Math.max(.2, Number(source.depth_m) || .2)) return false
+      const a = terrain.area || {center_lat:18.49,center_lon:-66.08}
+      const KY = 111.195, KX = KY * Math.cos(a.center_lat * Math.PI / 180)
+      eventData.current.onReleaseChange(index, a.center_lat + hit.y / KY, a.center_lon + hit.x / KX)
+      return true
+    }
+    const onDown = e => {
+      if (e.button !== 0 || !eventData.current.terrain) return
+      canvasPos(e)
+      const hits = ray.intersectObjects(releaseMeshes.current, false)
+      if (hits.length) {
+        interaction = hits[0].object.userData.releaseIndex
+      } else if (eventData.current.placingRelease) {
+        interaction = eventData.current.selectedRelease
+      } else return
+      controls.enabled = false
+      e.stopImmediatePropagation()
+      e.preventDefault()
+      renderer.domElement.setPointerCapture(e.pointerId)
+      placeAt(e, interaction)
+    }
+    const onDrag = e => { if (interaction !== null) placeAt(e, interaction) }
+    const onUp = e => {
+      if (interaction === null) return
+      placeAt(e, interaction)
+      interaction = null
+      controls.enabled = true
+      if (eventData.current.placingRelease) eventData.current.onReleasePlacementDone()
+      if (renderer.domElement.hasPointerCapture(e.pointerId)) renderer.domElement.releasePointerCapture(e.pointerId)
+    }
+    renderer.domElement.addEventListener('pointerdown', onDown, true)
+    renderer.domElement.addEventListener('pointermove', onDrag)
+    renderer.domElement.addEventListener('pointerup', onUp)
+    renderer.domElement.addEventListener('pointercancel', onUp)
     const ray = new THREE.Raycaster(), ndc = new THREE.Vector2()
     let lastProbe = 0
     const onMove = (e) => {
@@ -344,6 +404,12 @@ export default function Scene({ terrain, result, frame, vex = 1, showSurface = t
     render()
     return () => {
       renderer.domElement.removeEventListener('pointermove', onMove); renderer.domElement.removeEventListener('pointerleave', onLeave)
+      renderer.domElement.removeEventListener('pointerdown', onDown, true)
+      renderer.domElement.removeEventListener('pointermove', onDrag)
+      renderer.domElement.removeEventListener('pointerup', onUp)
+      renderer.domElement.removeEventListener('pointercancel', onUp)
+      releaseMeshes.current = []
+      disposeContents(releasesGroup)
       cancelAnimationFrame(raf); observer.disconnect(); controls.dispose()
       disposeContents(base); disposeContents(plume); disposeContents(extras)
       renderer.dispose()
@@ -356,22 +422,24 @@ export default function Scene({ terrain, result, frame, vex = 1, showSurface = t
     const obj = objects.current
     if (!obj) return
     const { camera, controls } = obj
+    const cameraScale = Math.max(terrain?.width_km || 16.5, terrain?.height_km || 16.5) / 16.5
     if (cameraMode === 'block') {
       controls.target.set(0, 0, (BOX.top + BOX.bottom) / 2)
-      camera.position.set(22, -27, (BOX.top + BOX.bottom) / 2 + 9)
+      camera.position.set(22 * cameraScale, -27 * cameraScale, (BOX.top + BOX.bottom) / 2 + 9 * cameraScale)
     } else {
       controls.target.set(0, -.8, -.30)
-      camera.position.set(13, -17, 10)
+      camera.position.set(13 * cameraScale, -17 * cameraScale, 10 * cameraScale)
     }
     controls.update()
-  }, [cameraResetKey, cameraMode])
+  }, [cameraResetKey, cameraMode, terrain])
 
   useEffect(() => {
     const obj = objects.current
     if (!obj || !terrain) return
     const { base } = obj
     disposeContents(base)
-    const { L, n, h } = terrain
+    const { n, h } = terrain
+    const W = terrain.width_km || terrain.L, H = terrain.height_km || terrain.L
     const { minH, maxH } = fitBox(terrain, vex)
     const landscape = new THREE.Group(), buildingGroup = new THREE.Group(), vegetationGroup = new THREE.Group()
     base.add(landscape, buildingGroup, vegetationGroup)
@@ -379,24 +447,24 @@ export default function Scene({ terrain, result, frame, vex = 1, showSurface = t
     cityRef.current = buildingGroup
     canopyRef.current = vegetationGroup
 
-    // Horizontal 16.5 km square; height fitted to the data.
+    // Rectangular horizontal domain; vertical height fitted to bathymetry.
     if (showBounds) {
-      const geometry = new THREE.BoxGeometry(L, L, BOX.top - BOX.bottom)
+      const geometry = new THREE.BoxGeometry(W, H, BOX.top - BOX.bottom)
       const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry),
         new THREE.LineBasicMaterial({ color: '#326a7d', transparent: true, opacity: .54, depthTest: false }))
       edges.position.z = (BOX.top + BOX.bottom) / 2
       base.add(edges)
       const labels = [
-        [`${L} km E–W`, 0, -L / 2, BOX.top + .35],
-        [`${L} km N–S`, L / 2, 0, BOX.top + .35],
-        [`${Math.round(-minH).toLocaleString()} m deep${vex > 1 ? ` · ${vex}× vertical` : ''}`, L / 2, L / 2, (BOX.top + BOX.bottom) / 2],
+        [`${W} km E–W`, 0, -H / 2, BOX.top + .35],
+        [`${H} km N–S`, W / 2, 0, BOX.top + .35],
+        [`${Math.round(-minH).toLocaleString()} m deep${vex > 1 ? ` · ${vex}× vertical` : ''}`, W / 2, H / 2, (BOX.top + BOX.bottom) / 2],
       ]
       for (const [label, x, y, z] of labels) {
         const sprite = labelSprite(label); sprite.position.set(x, y, z); base.add(sprite)
       }
     }
 
-    const plane = new THREE.PlaneGeometry(L, L, n - 1, n - 1)
+    const plane = new THREE.PlaneGeometry(W, H, n - 1, n - 1)
     const coords = plane.getAttribute('position')
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
       const idx = j * n + i
@@ -445,27 +513,74 @@ export default function Scene({ terrain, result, frame, vex = 1, showSurface = t
   useEffect(() => {
     const obj = objects.current
     if (!obj) return
+    disposeContents(obj.releasesGroup)
+    const terrainData = terrain
+    releaseMeshes.current = []
+    if (!terrainData) return
+    const area = terrainData.area || {center_lat:18.49,center_lon:-66.08}
+    const KY = 111.195, KX = KY * Math.cos(area.center_lat * Math.PI / 180)
+    for (const [index, pt] of releasePoints.entries()) {
+      const x = (Number(pt.lon) - area.center_lon) * KX
+      const y = (Number(pt.lat) - area.center_lat) * KY
+      const W = terrainData.width_km || terrainData.L, H = terrainData.height_km || terrainData.L
+      if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) >= W/2 || Math.abs(y) >= H/2) continue
+      const safe = sampleGrid(terrainData,x,y) < -Math.max(.2, Number(pt.depth_m) || .2)
+      const material = new THREE.MeshBasicMaterial({color:safe ? '#ffe35a' : '#ff7f7f'})
+      const marker = new THREE.Mesh(new THREE.SphereGeometry(.105, 16, 12), material)
+      marker.position.set(x,y,.10)
+      marker.userData.releaseIndex=index
+      marker.renderOrder=8
+      obj.releasesGroup.add(marker)
+      releaseMeshes.current.push(marker)
+    }
+  }, [terrain, releasePoints.map(p => [p.lat,p.lon,p.depth_m].join(':')).join('|')])
+
+  useEffect(() => {
+    const obj = objects.current
+    if (!obj) return
     const { plume, extras } = obj
     disposeContents(plume); disposeContents(extras)
     if (currentArrow && Number.isFinite(currentArrow[0]) && Number.isFinite(currentArrow[1])) {
       const [u, v] = currentArrow
       if (Math.hypot(u, v) > .0001) {
         const arrow = new THREE.ArrowHelper(new THREE.Vector3(u, v, 0).normalize(),
-          new THREE.Vector3(-6, 5.9, .4), 1.7, '#f9dc8e', .45, .24)
+          new THREE.Vector3(-Math.min(6, (terrain?.width_km || 16.5)*.35), Math.min(5.9,(terrain?.height_km || 16.5)*.35), .4), 1.7, '#f9dc8e', .45, .24)
         extras.add(arrow)
       }
     }
     if (!result) return
-    const pointMaterial = new THREE.MeshBasicMaterial({ color: '#fff1a0' })
-    const pointGeometry = new THREE.SphereGeometry(.07, 12, 8)
-    const allReleases = [result.inputs.release_km, ...(result.inputs.additional_release_km || [])]
-    const depths = [result.inputs.depth_m, ...(result.inputs.additional_release_depth_m || [])]
-    allReleases.forEach(([x, y], i) => {
-      const marker = new THREE.Mesh(pointGeometry.clone(), pointMaterial.clone())
-      marker.position.set(x, y, clamp(-(depths[i] || 0) / 1000 * vex, BOX.bottom, BOX.top))
-      plume.add(marker)
-    })
     if (!frame) return
+    if (plumeMode === 'cloud') {
+      const voxels = frame.voxels || []
+      const max = Math.max(frame.cloud_peak || 0, 1e-15)
+      const positions=[], colors=[], strengths=[]
+      const blue = new THREE.Color('#071a87'), cyan = new THREE.Color('#37c7ed'), yellow = new THREE.Color('#ffe45c'), red = new THREE.Color('#f01327')
+      for (const [x,y,z,value] of voxels) {
+        const t = Math.pow(clamp(value/max, 0, 1), .42)
+        const c = t < .33 ? blue.clone().lerp(cyan,t/.33) : t < .67 ? cyan.clone().lerp(yellow,(t-.33)/.34) : yellow.clone().lerp(red,(t-.67)/.33)
+        positions.push(x,y,clamp(z/1000*vex,BOX.bottom,BOX.top))
+        colors.push(c.r,c.g,c.b); strengths.push(.38+.62*t)
+      }
+      if (positions.length) {
+        const geom=new THREE.BufferGeometry()
+        geom.setAttribute('position',new THREE.Float32BufferAttribute(positions,3))
+        geom.setAttribute('color',new THREE.Float32BufferAttribute(colors,3))
+        geom.setAttribute('strength',new THREE.Float32BufferAttribute(strengths,1))
+        const material=new THREE.ShaderMaterial({
+          transparent:true, depthWrite:false, vertexColors:true, blending:THREE.NormalBlending,
+          vertexShader:`attribute float strength; varying vec3 col; varying float alphaV;
+            void main(){ col=color; alphaV=strength; vec4 v=modelViewMatrix*vec4(position,1.);
+              gl_PointSize=clamp(140.0/-v.z,14.0,65.0); gl_Position=projectionMatrix*v; }`,
+          fragmentShader:`varying vec3 col; varying float alphaV;
+            void main(){float d=length(gl_PointCoord-vec2(.5))*2.0;
+              float a=pow(max(0.0,1.0-smoothstep(.12,1.0,d)),1.4)*alphaV*.46;
+              if(a<.015)discard; gl_FragColor=vec4(col,a);}`,
+        })
+        const clouds=new THREE.Points(geom,material)
+        clouds.frustumCulled=false; clouds.renderOrder=5; plume.add(clouds)
+      }
+      return
+    }
     const positions = [], colors = []
     for (const p of frame.points || []) {
       const [x, y, z, intensity, sourceId = 0] = p
@@ -490,10 +605,10 @@ export default function Scene({ terrain, result, frame, vex = 1, showSurface = t
       points.renderOrder = 3
       plume.add(points)
     }
-  }, [result, frame, vex, currentArrow?.[0], currentArrow?.[1]])
+  }, [result, frame, vex, plumeMode, currentArrow?.[0], currentArrow?.[1]])
 
   return <>
-    <div ref={host} className="threeHost" aria-label="Freely rotatable three-dimensional coastal simulation block, 16.5 kilometres wide" />
+    <div ref={host} className="threeHost" aria-label="Freely rotatable three-dimensional coastal simulation with draggable pollutant release markers" />
     {probe && <div className="depthProbe" style={{ left: probe.px + 16, top: probe.py + 16 }}>
       {probe.z < 0 ? <><strong>{(-probe.z).toLocaleString()} m</strong> water depth</> : <><strong>{probe.z.toLocaleString()} m</strong> above sea level</>}
     </div>}
