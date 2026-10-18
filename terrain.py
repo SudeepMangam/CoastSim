@@ -96,6 +96,59 @@ async def noaa_terrain(n=81):
                     'ETOPO uses an EGM2008 height datum; not directly interchangeable with station MLLW water levels.'])
 
 
+NCEI_DEM='https://gis.ngdc.noaa.gov/arcgis/rest/services/DEM_mosaics/DEM_global_mosaic/ImageServer/exportImage'
+
+
+async def ncei_terrain(n=201, px=1100):
+    """Fetch NCEI elevation raster; resample by geographic coordinates to the local grid."""
+    import httpx
+    from rasterio.io import MemoryFile
+    from rasterio.transform import from_bounds
+    from rasterio.warp import reproject, Resampling
+    b = bounds()
+    params = {
+        'bbox': f"{b['west']:.7f},{b['south']:.7f},{b['east']:.7f},{b['north']:.7f}",
+        'bboxSR': '4326', 'imageSR': '4326', 'size': f'{px},{px}',
+        'format': 'tiff', 'pixelType': 'F32', 'interpolation': 'RSP_BilinearInterpolation', 'f': 'image'
+    }
+    async with httpx.AsyncClient(follow_redirects=True, timeout=90,
+                                 headers={'User-Agent': 'CoastSim-Educational/1.0'}) as client:
+        response = await client.get(NCEI_DEM, params=params)
+        response.raise_for_status()
+    if response.content[:4] not in (b'II*\x00', b'MM\x00*'):
+        raise ValueError('NOAA NCEI service returned no GeoTIFF: ' + response.text[:160])
+    with MemoryFile(response.content) as mem:
+        with mem.open() as ds:
+            if ds.crs is None:
+                raise ValueError('NOAA NCEI GeoTIFF has no CRS')
+            src = ds.read(1, masked=True).filled(np.nan).astype('float32')
+            src[(src < -11000) | (src > 3000)] = np.nan
+            if np.mean(~np.isfinite(src)) > 0.02:
+                raise ValueError('NOAA NCEI DEM has more than 2% missing pixels')
+            # Output pixel *centers* are the CoastSim grid nodes, including both edges.
+            # Reproject writes north-to-south. CoastSim's h is south-to-north.
+            step_x = (b['east'] - b['west']) / (n - 1)
+            step_y = (b['north'] - b['south']) / (n - 1)
+            target_transform = from_bounds(b['west'] - step_x / 2, b['south'] - step_y / 2,
+                                           b['east'] + step_x / 2, b['north'] + step_y / 2, n, n)
+            output = np.full((n, n), np.nan, dtype='float32')
+            reproject(source=src, destination=output, src_transform=ds.transform,
+                      src_crs=ds.crs, dst_transform=target_transform, dst_crs='EPSG:4326',
+                      src_nodata=np.nan, dst_nodata=np.nan, resampling=Resampling.bilinear)
+    if not np.isfinite(output).all():
+        raise ValueError('NOAA NCEI DEM does not fully cover the CoastSim domain')
+    return Terrain(np.flipud(output), 'NOAA NCEI DEM Global Mosaic', 'measured_topography', [
+        'DEM survey resolutions and vertical datums vary; the zero-elevation shoreline is approximate.',
+        'Verify coverage, metadata and bathymetry before scientific interpretation.'
+    ])
+
+
+async def _etopo_after_failure(n, why):
+    t=await noaa_terrain(n)
+    t.warnings.insert(0,f'High-resolution NCEI DEM unavailable ({why}); using coarse ETOPO.')
+    return t
+
+
 async def load_terrain(n=81):
     path=os.getenv('DEM_PATH','').strip()
     if path:
@@ -106,8 +159,12 @@ async def load_terrain(n=81):
             t.warnings.insert(0,'Local DEM failed: '+str(ex))
             return t
     try:
-        return await cached(('etopo',n),86400,lambda:noaa_terrain(n))
+        return await cached(('ncei',n),7*86400,lambda:ncei_terrain(n))
+    except Exception as ex:
+        why=str(ex)[:160] or type(ex).__name__
+    try:
+        return await cached(('etopo-fb',n),3600,lambda:_etopo_after_failure(n,why))
     except Exception as ex:
         t=demo_terrain(n)
-        t.warnings.insert(0,'NOAA bathymetry unavailable: '+str(ex)[:200])
+        t.warnings.insert(0,'NOAA bathymetry unavailable: '+(why+' | '+str(ex))[:240])
         return t

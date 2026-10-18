@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, model_validator
 import ocean
 import sim
 from terrain import load_terrain
+from geodata import geo_payload
 from velocity_field import load_field
 
 app=FastAPI(title='San Juan CoastSim',version='1.0.0',description='Educational Lagrangian dispersion simulator with NOAA and Open-Meteo data.')
@@ -25,8 +26,14 @@ def health():
 
 
 @app.get('/api/terrain')
-async def terrain_grid(n:int=Query(81,ge=41,le=151)):
+async def terrain_grid(n:int=Query(201,ge=41,le=401)):
     return (await load_terrain(n)).json()
+
+
+@app.get('/api/geo')
+async def geo():
+    """OpenStreetMap building outlines and land cover (never invented; empty if the service is unreachable)."""
+    return await geo_payload()
 
 
 @app.get('/api/conditions')
@@ -108,7 +115,7 @@ def closest_start(series):
 
 @app.post('/api/simulate')
 async def simulate(r:SimRequest):
-    terrain=await load_terrain(81)
+    terrain=await load_terrain(161)
     x,y=ocean.to_xy(r.lat,r.lon)
     release_defs = [{'x':x, 'y':y, 'depth_m':r.depth_m,
                      'rate_kg_s':r.rate_kg_s, 'duration_h':r.duration_h}]
