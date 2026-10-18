@@ -47,6 +47,14 @@ async def radar():
         raise HTTPException(503,'HF radar not currently available: '+str(ex)[:350])
 
 
+class AdditionalRelease(BaseModel):
+    lat:float=Field(...,ge=18.3,le=18.7)
+    lon:float=Field(...,ge=-66.3,le=-65.85)
+    depth_m:float=Field(...,ge=0.05,le=2000)
+    rate_kg_s:float=Field(...,gt=0,le=1000)
+    duration_h:float=Field(...,gt=0,le=72)
+
+
 class SimRequest(BaseModel):
     pollutant:Literal['oil','chemical','microplastic']='chemical'
     mode:Literal['forecast','demo','manual','model3d']='forecast'
@@ -57,6 +65,9 @@ class SimRequest(BaseModel):
     duration_h:float=Field(2,gt=0,le=72)
     hours:float=Field(24,gt=0,le=96)
     members:int=Field(8,ge=1,le=24)
+    particles_per_step:int=Field(2,ge=1,le=20)
+    render_limit:int=Field(1750,ge=100,le=10000)
+    additional_releases:list[AdditionalRelease]=Field(default_factory=list,max_length=4)
     kh:float=Field(1,ge=0,le=1000)
     kz:float=Field(.002,ge=0,le=10)
     half_life_h:float=Field(0,ge=0,le=100000)
@@ -99,8 +110,17 @@ def closest_start(series):
 async def simulate(r:SimRequest):
     terrain=await load_terrain(81)
     x,y=ocean.to_xy(r.lat,r.lon)
-    if abs(x)>=ocean.L_KM/2 or abs(y)>=ocean.L_KM/2:
-        raise HTTPException(422,'Release must be inside the 10 × 10 mile San Juan region.')
+    release_defs = [{'x':x, 'y':y, 'depth_m':r.depth_m,
+                     'rate_kg_s':r.rate_kg_s, 'duration_h':r.duration_h}]
+    for release in r.additional_releases:
+        px, py = ocean.to_xy(release.lat, release.lon)
+        release_defs.append({'x':px,'y':py,'depth_m':release.depth_m,
+                             'rate_kg_s':release.rate_kg_s,'duration_h':release.duration_h})
+    if any(abs(a['x']) >= ocean.L_KM / 2 or abs(a['y']) >= ocean.L_KM / 2 for a in release_defs):
+        raise HTTPException(422,'All releases must be inside the 16.5 × 16.5 km San Juan region.')
+    projected_particles = math.ceil(r.hours * 3600 / 300) * r.particles_per_step * len(release_defs) * r.members
+    if projected_particles > 250000:
+        raise HTTPException(422, f'Too many particles across ensemble ({projected_particles:,} > 250,000). Reduce particles, members, hours or sources.')
     if terrain.status=='synthetic' and r.mode in ('forecast','model3d'):
         raise HTTPException(503,'Real NOAA bathymetry unavailable. Load a real DEM or choose DEMO mode explicitly.')
     try:
@@ -150,14 +170,22 @@ async def simulate(r:SimRequest):
             sources={'currents':'Synthetic sinusoidal demonstration','wind':'Synthetic demonstration','terrain':terrain.source,'current_type':'synthetic'}
         settling = (r.settling_ms if r.settling_ms is not None else sim.settling_stokes(r.diameter_mm,r.density_kg_m3)) if r.pollutant=='microplastic' else 0.0
         p=r.model_dump()
-        p.update(release_x=x,release_y=y,settling_ms=settling,dt_s=300,particles_per_step=2)
+        p.update(release_x=x,release_y=y,release_specs=release_defs,settling_ms=settling,dt_s=300)
         if r.pollutant=='oil':p.update(depth_m=0.2,kz=0.0,settling_ms=0)
-        if float(terrain.height(x,y))>=-p['depth_m']:
-            raise ValueError('Release location is on land or shallower than release depth. Move release offshore or reduce depth.')
+        if r.pollutant == 'oil':
+            for release in release_defs: release['depth_m'] = 0.2
+        for idx, release in enumerate(release_defs, start=1):
+            if float(terrain.height(release['x'],release['y'])) >= -release['depth_m']:
+                raise ValueError(f'Release source {idx} is on land or shallower than release depth. Move it offshore or reduce depth.')
         results=await asyncio.to_thread(sim.ensemble,p,terrain,current_fn,wind_fn)
         return {'source_status':sources,'mode':r.mode,'pollutant':r.pollutant,
                 'inputs':{'lat':r.lat,'lon':r.lon,'release_km':[round(x,3),round(y,3)],
-                          'depth_m':p['depth_m'],'settling_ms':settling,'horizontal_km':ocean.L_KM},
+                          'depth_m':p['depth_m'],
+                          'additional_release_km':[[round(item['x'],3),round(item['y'],3)] for item in release_defs[1:]],
+                          'additional_release_depth_m':[item['depth_m'] for item in release_defs[1:]],
+                          'release_count':len(release_defs), 'particles_per_step':r.particles_per_step,
+                          'render_limit':r.render_limit,
+                          'settling_ms':settling,'horizontal_km':ocean.L_KM},
                 'terrain_warning':terrain.warnings,**results}
     except (ValueError,FloatingPointError) as ex:
         raise HTTPException(422,str(ex)) from ex

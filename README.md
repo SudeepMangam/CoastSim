@@ -1,6 +1,6 @@
 # CoastSim — San Juan (Puerto Rico) pollution dispersion simulator
 
-React + Three.js and FastAPI. Educational, physics-based **virtual** pollutant transport across a fixed **10 × 10 mile (16.093 × 16.093 km)** coastal square centered at **18.49° N, 66.08° W**. Actual water-column depth follows bathymetry, not a fictional 10-mile-deep cube.
+React + Three.js and FastAPI. Educational, physics-based **virtual** pollutant transport across a fixed **16.5 × 16.5 km horizontal** coastal square centered at **18.49° N, 66.08° W**. The Three.js scene has a **16.5 km vertical wireframe volume**, but the ocean stops at the actual modeled seabed: the cube is a visualization boundary, not 16.5 km of water.
 
 ### Current capabilities
 
@@ -128,3 +128,28 @@ Docker builds weren't executed in this offline environment; local Python tests a
 The front-end now opens with a full-screen Three.js ocean view. The floating **Configure** control opens scenario settings, with separate **Ocean data** and **Results** tabs. **Layers** changes seabed, surface, domain box, currents, and depth exaggeration. The bottom dock provides compact playback controls and a mass/spread summary. All pollutant models and FastAPI endpoints are unchanged.
 
 To use only the UI update in an existing local checkout, replace `App.jsx` and `styles.css` and (if your copy still uses the old proxy) `vite.config.js`, then run `npm run dev`. The new proxy configuration intentionally matches `/api/` instead of `/api` so that the frontend `api.js` file is not sent to FastAPI.
+
+## Three.js local 16.5 km cube — current release
+
+- **No Cesium dependencies or access tokens.** Single Three.js canvas fills the viewport.
+- **16.5 km east–west × 16.5 km north–south × 16.5 km vertical wireframe.** The volume's top is 1 km above the surface, bottom 15.5 km below. This **does not** mean the coastal ocean is that deep. The model continues to use bathymetric seafloor depths.
+- **Free OrbitControls:** left drag rotates, right drag pans, mouse wheel zooms. **Focus coast** restores a shoreline-oriented perspective. **Full block** frames the entire cube. Neither locks the camera.
+- **Textured terrain:** a reproducible procedural texture is shaded from the provided NOAA/synthetic elevation mesh into submarine sediment, sand/beach, and grassy upland. Water triangles are clipped against the shoreline instead of covering land.
+- **Illustrative 3D buildings and trees** are placed only on suitable above-water terrain. They do **not** represent true building locations or urban survey data. Efficient InstancedMeshes keep draw calls low.
+- **Overlaid particles:** the same FastAPI simulation frames and release markers; three pollution types, multiple sources, up to 48 snapshots, playback, diagnostics and exports are preserved.
+- **Vertical exaggeration** changes *rendering only*, not physical simulation, and can displace visual terrain relative to the fixed 16.5 km reference frame. Select **1×** for unexaggerated measurements.
+- A finer georeferenced NOAA coastal DEM can improve shoreline detail; the default ETOPO is too coarse for individual beaches, streets and buildings.
+
+### Updating an existing Non-Cesium branch
+
+Replace `App.jsx`, `Scene.jsx`, `styles.css`, `package.json`, `vite.config.js`, `ocean.py`, `main.py` and `.env.example` from the patch ZIP. Delete `CesiumScene.jsx` if still present. Then from that checkout run:
+
+```powershell
+npm install
+npm run build
+npm run dev
+```
+
+In another terminal, start FastAPI with `python -m uvicorn main:app --reload --port 8000`. See the commands at the top for setting up Python.
+
+The Python suite passed **22 tests** in the authoring environment. The JSX source passed syntax parsing. A full npm/Vite build and browser rendering test could **not** be performed there because network access to the npm registry failed. Validate the production frontend build on your machine.

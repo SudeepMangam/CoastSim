@@ -9,3 +9,6 @@ __pycache__/
 *.tif
 *.tiff
 .DS_Store
+
+.env.local
+.env.*.local

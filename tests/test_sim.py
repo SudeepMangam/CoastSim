@@ -79,3 +79,18 @@ def test_bottom_and_surface_reflection_with_large_diffusion():
     r=run_member(scenario(hours=.5,kz=.4,kh=0,dt_s=60,release_y=0.,rate_kg_s=.1),h,currents,wind,6)
     zs=[p[2] for f in r['frames'] for p in f['points']]
     assert all(-20 <= z <= 0 for z in zs)
+
+
+def test_first_nonzero_snapshot_is_captured():
+    # The UI should not wait 10% of the simulation horizon before it can show
+    # released pollutant. Frame zero remains physically empty.
+    water=Terrain(np.full((81,81),-200.),'flat depth')
+    r=run_member(scenario(hours=24,duration_h=.5,release_y=0.,kh=0.,kz=0.,rate_kg_s=.01,dt_s=300),
+                 water,lambda t,x,y,z:(0.,0.,0.),lambda t:(0.,0.),5)
+    frames=r['frames']
+    assert frames[0]['hour']==0
+    assert frames[0]['active_particles']==0
+    assert frames[1]['hour']==pytest.approx(300/3600,abs=.01)
+    assert frames[1]['active_particles']>0
+    assert frames[1]['budget']['water_kg']>0
+    assert len(frames)>=40

@@ -1,20 +1,11 @@
-# Minimal UI update
+# Local Three.js 3D update
 
-CoastSim now gives the Three.js water-column visualization the entire viewport.
+Removed Cesium Ion and all globe-specific UI/dependencies. The scene is a free-orbiting, fullscreen, 16.5 × 16.5 × 16.5 km wireframe block with clipped water, shaded elevation-derived textures, generic buildings/trees, and animated pollutant data from FastAPI.
 
-- **Configure** opens a slide-over workspace for pollutant, release, mode, and advanced physics.
-- **Data** shows NOAA/CARICOOS source status and validation notes.
-- **Layers** shows seabed, surface, bounds, current arrows, and depth exaggeration.
-- **Results** includes peak concentration, budget, spread chart, provenance, and export actions.
-- The bottom overlay contains the playback timeline and core mass/spread metrics.
-- All emoji labels were removed.
-- The Vite dev proxy uses `/api/` to avoid proxying `api.js`.
-- Vite is set to `^6.4.3`, in line with the earlier vulnerability fix.
+**Camera**: left mouse = orbit, right mouse = pan, wheel = zoom. Buttons **Focus coast** and **Full block** reset to different freely rotatable perspectives.
 
-## Update an existing project
+**Layers**: toggle seabed, water, physical boundary, buildings, vegetation and current direction; change display-only vertical exaggeration.
 
-Replace `App.jsx`, `styles.css`, and `vite.config.js` in your existing `san_juan_coastsim` folder. Run `npm run dev` and reload the browser. Your `main.py`, `sim.py`, and data adapters do not need changes.
+**Scientific honesty**: only elevation and particle positions are data-driven. Building locations, grass/beach visual categories and fine-grained textures are generated visual context and are not derived from cadastral, land-use or aerial imagery. The 16.5 km vertical reference frame is not a claim about ocean depth.
 
-## Full project
-
-You can also use this whole folder as a fresh installation. See README.md for running the FastAPI backend and Vite frontend.
+**Install**: extract full project or apply updated source files into the existing git checkout. `npm install && npm run build && npm run dev`; run FastAPI separately. No Cesium token required.

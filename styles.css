@@ -200,3 +200,77 @@ button:not(:disabled):active { transform: translateY(1px); }
 @media (prefers-reduced-motion: reduce) {
   button:not(:disabled) { transition: none; }
 }
+
+/* Shared multi-source scenario input styles */
+.releaseHeading { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:14px; }
+.releaseHeading h3 { margin:0; }
+.releaseCard { border:1px solid var(--line); padding:10px 12px; margin:11px 0; border-radius:8px; background:#112b3b; }
+.apiError { display:grid; gap:4px; margin:8px 0; padding:10px; background:rgba(107,55,52,.23); border:1px solid rgba(199,105,98,.36); border-radius:7px; word-break:break-word; }
+.apiError strong { font-size:11px; color:#f2c7c2; }
+.apiError span { color:#d0b2af; font-size:10px; line-height:1.5; }
+
+/* Full viewport local 3D block. Controls overlay, never shrink canvas. */
+.orbitHint { position:absolute; z-index:3; top:94px; left:23px; font-size:10px; color:#c3dbe4; background:rgba(5,23,33,.58); border:1px solid rgba(117,165,183,.13); padding:7px 10px; border-radius:7px; pointer-events:none; }
+.cameraQuick { position:absolute; z-index:4; right:22px; top:94px; display:flex; gap:6px; }
+.cameraQuick button, .cameraChoice button { padding:8px 10px; border:1px solid #3c6071; border-radius:7px; color:#ddf1f7; background:rgba(8,27,40,.86); font-size:11px; }
+.cameraQuick button:hover, .cameraChoice button:hover { background:#214b5d; }
+.cameraChoice { display:flex; gap:6px; padding-bottom:10px; }
+.cameraChoice button { flex:1; }
+@media(max-width:900px){ .cameraQuick {top:75px; right:12px;} .orbitHint {left:12px; top:75px; max-width:190px;} }
+@media(max-width:680px){ .orbitHint {display:none;} .cameraQuick {top:70px;} }
+
+/* ===== Visual polish layer (overrides above) ===== */
+:root {
+  --glass: linear-gradient(180deg, rgba(16, 40, 58, .80), rgba(8, 22, 34, .88));
+  --glass-line: rgba(160, 212, 232, .17);
+  --glass-shadow: 0 18px 50px rgba(0, 0, 0, .38), inset 0 1px 0 rgba(255, 255, 255, .06);
+  --accent-grad: linear-gradient(135deg, #b4eef7, #5fc3e0);
+  --shallow: #3dc7cc; --mid: #0d6bad; --deep: #051a47;
+}
+.app { background: radial-gradient(120% 90% at 50% 0%, #11364a 0%, #08202f 55%, #050f18 100%); }
+.brandPanel, .headerActions, .playbackDock, .controlDrawer, .layersPopover, .canvasHint, .miniLegend, .orbitHint, .depthLegend, .depthProbe {
+  background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(18px) saturate(150%); -webkit-backdrop-filter: blur(18px) saturate(150%);
+}
+.brandGlyph { background: var(--accent-grad); box-shadow: 0 4px 14px rgba(95, 195, 224, .35); }
+.brandText strong { font-size: 15px; letter-spacing: -.02em; }
+.toolbarButton { border-radius: 8px; letter-spacing: .01em; }
+.toolbarButton:hover, .toolbarButton[aria-expanded="true"] { background: rgba(140, 219, 239, .14); border-color: var(--glass-line); }
+.primaryToolbar, .runFromDrawer { background: var(--accent-grad); box-shadow: 0 6px 18px rgba(95, 195, 224, .30); }
+.primaryToolbar:hover:not(:disabled), .runFromDrawer:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+.drawerTitle h2 { font-size: 19px; }
+.drawerSection h3 { color: #8fd2e6; letter-spacing: .14em; }
+.choice button.active { background: linear-gradient(180deg, #1f4a5e, #173a4b); border-color: #7fd0e6; box-shadow: 0 0 0 3px rgba(127, 208, 230, .10); }
+.fieldControl input:focus { border-color: #7fd0e6; outline: 0; box-shadow: 0 0 0 3px rgba(127, 208, 230, .16); }
+.controlDrawer, .drawerBody { scrollbar-color: #3c6176 transparent; }
+.timeBlock strong { font-size: 17px; letter-spacing: -.01em; }
+.metric strong { font-size: 15px; }
+.playControls .playButton { background: var(--accent-grad); border-color: transparent; }
+
+/* Layer panel: switches instead of checkboxes */
+.layersPopover { width: 252px; border-radius: 14px; }
+.layersPopover label:not(.depthSelect) { flex-direction: row-reverse; justify-content: space-between; }
+.layersPopover input[type="checkbox"] { appearance: none; -webkit-appearance: none; flex: 0 0 auto; width: 30px; height: 17px; border-radius: 99px; background: #27495a; position: relative; cursor: pointer; transition: background .18s ease; }
+.layersPopover input[type="checkbox"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #d9eef6; transition: transform .18s ease; }
+.layersPopover input[type="checkbox"]:checked { background: #3aa9c8; }
+.layersPopover input[type="checkbox"]:checked::after { transform: translateX(13px); }
+
+/* Timeline slider */
+.scrubRow input[type="range"] { appearance: none; -webkit-appearance: none; height: 6px; border-radius: 99px; background: linear-gradient(90deg, #3ab4d2, #1f6c8a); }
+.scrubRow input[type="range"]::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%; background: #e9fbff; border: 2px solid #3ab4d2; box-shadow: 0 2px 8px rgba(0, 0, 0, .4); }
+.scrubRow input[type="range"]::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: #e9fbff; border: 2px solid #3ab4d2; }
+
+/* Depth legend + hover readout */
+.depthLegend { position: absolute; z-index: 3; right: 22px; bottom: 126px; width: 214px; padding: 11px 13px 10px; border-radius: 12px; }
+.depthLegend > span { display: block; margin-bottom: 9px; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #8fd2e6; }
+.depthBar { position: relative; height: 8px; border-radius: 99px; background: linear-gradient(90deg, var(--shallow) 0%, var(--mid) 45%, var(--deep) 100%); margin-bottom: 18px; }
+.depthBar i { position: absolute; top: 0; width: 1px; height: 12px; background: rgba(230, 248, 255, .75); }
+.depthBar i b { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); font-size: 9px; font-weight: 500; font-style: normal; color: #9fc0cf; white-space: nowrap; }
+.depthLegend .legendEnds { margin-top: 0; }
+.depthLegend small { display: block; margin-top: 8px; font-size: 9px; line-height: 1.5; color: #86a4b4; }
+.depthProbe { position: absolute; z-index: 6; pointer-events: none; padding: 7px 10px; border-radius: 9px; font-size: 11px; color: #bcd6e2; white-space: nowrap; }
+.depthProbe strong { color: #f1fbff; font-size: 13px; font-variant-numeric: tabular-nums; margin-right: 3px; }
+@media (max-width: 900px) { .depthLegend { right: 12px; bottom: 119px; width: 180px; } .depthLegend small { display: none; } }
+@media (max-width: 680px) { .depthLegend { display: none; } }
+
+.layerNote { margin: 8px 0 2px; padding-top: 10px; border-top: 1px solid var(--glass-line); font-size: 10px; line-height: 1.55; color: #8fb0c0; }

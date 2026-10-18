@@ -3,7 +3,7 @@ const json = async (path, options) => {
   if (!r.ok) {
     let error = `${r.status} ${r.statusText}`
     try { const body = await r.json(); error = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail) } catch {}
-    throw new Error(error)
+    throw new Error(`${path} — HTTP ${r.status}: ${error}`)
   }
   return r.json()
 }

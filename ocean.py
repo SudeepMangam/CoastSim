@@ -11,7 +11,7 @@ import httpx
 import numpy as np
 
 LAT0, LON0 = 18.49, -66.08
-L_KM = 16.09344  # 10 statute miles on each horizontal side
+L_KM = 16.5  # 16.5 km by 16.5 km local horizontal domain
 KY = 111.195
 KX = KY * math.cos(math.radians(LAT0))
 STATION = '9755371'
