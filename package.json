@@ -11,12 +11,10 @@
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "three": "^0.160.0",
-    "cesium": "^1.145.0"
+    "three": "^0.160.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^6.4.3",
-    "vite-plugin-cesium": "^1.2.23"
+    "vite": "^6.4.3"
   }
 }

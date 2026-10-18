@@ -128,7 +128,3 @@ Docker builds weren't executed in this offline environment; local Python tests a
 The front-end now opens with a full-screen Three.js ocean view. The floating **Configure** control opens scenario settings, with separate **Ocean data** and **Results** tabs. **Layers** changes seabed, surface, domain box, currents, and depth exaggeration. The bottom dock provides compact playback controls and a mass/spread summary. All pollutant models and FastAPI endpoints are unchanged.
 
 To use only the UI update in an existing local checkout, replace `App.jsx` and `styles.css` and (if your copy still uses the old proxy) `vite.config.js`, then run `npm run dev`. The new proxy configuration intentionally matches `/api/` instead of `/api` so that the frontend `api.js` file is not sent to FastAPI.
-
-## Cesium Ion and multiple release update
-
-See **[CESIUM_UPGRADE.md](CESIUM_UPGRADE.md)** for Cesium setup, secure public access-token restrictions, the added pollutant release/particle controls, the API diagnostics panel, known HTTP errors, and validation limitations.

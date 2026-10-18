@@ -116,14 +116,6 @@ export default function Scene({ terrain, result, frame, vex, showSurface, showBo
     const release=sphere(.135,0xffd76a)
     release.position.set(rx,ry,-result.inputs.depth_m*vex/1000)
     plume.add(release)
-    const otherReleases = result.inputs.additional_release_km || []
-    const otherDepths = result.inputs.additional_release_depth_m || []
-    for(let i=0;i<otherReleases.length;i++){
-      const [sx,sy] = otherReleases[i]
-      const dot=sphere(.115,0xffd76a)
-      dot.position.set(sx,sy,-(otherDepths[i] || 0)*vex/1000)
-      plume.add(dot)
-    }
     if(!frame)return
     const pos=[],col=[]
     for(const [x,y,z,intensity] of frame.points){

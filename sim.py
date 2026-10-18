@@ -65,29 +65,22 @@ def run_member(req, terrain, current_fn, wind_fn, seed, keep_frames=True):
     rng=np.random.default_rng(seed)
     hours=float(req['hours']);duration=float(req['duration_h']);dt=float(req.get('dt_s',300))
     steps=int(math.ceil(hours*3600/dt));pps=int(req.get('particles_per_step',2))
-    sources=req.get('release_specs') or [{'x':req['release_x'],'y':req['release_y'],
-                'depth_m':req['depth_m'],'rate_kg_s':req['rate_kg_s'],'duration_h':req['duration_h']}]
-    max_n=steps*pps*len(sources)+8
+    max_n=steps*pps+8
     x=np.zeros(max_n);y=np.zeros(max_n);z=np.zeros(max_n);mass=np.zeros(max_n)
     state=np.zeros(max_n,dtype=np.int8) # 0 water, 1 beached, 2 outside
-    source_id=np.zeros(max_n,dtype=np.int16)
     n=0
     kind=req['pollutant']
     released=0.0
-    for source in sources:
-        if float(terrain.height(source['x'],source['y'])) >= -source['depth_m']:
-            raise ValueError('A release must be in water deeper than the release depth.')
+    lon0=req['release_x'];lat0=req['release_y']
+    depth=req['depth_m']
+    if float(terrain.height(lon0,lat0)) >= -max(depth,1):
+        raise ValueError('Release must be in water deeper than release depth. Try moving offshore or using shallower release depth.')
     half_life=float(req['half_life_h'])
     windage=float(req['windage'])
     kh=float(req['kh']);kv=float(req['kz']);settle=float(req['settling_ms'])
     surf=kind=='oil'
     frames=[]
-    # Capture a genuine empty t=0 state, the first emission step, then regular
-    # snapshots. Including the first nonempty frame prevents a long wait for the
-    # initial plume while preserving the correct zero-mass initial condition.
-    snapshot_count=min(48, steps)
-    snap_ix={1, steps} | {max(1, round(k*steps/snapshot_count))
-                            for k in range(1, snapshot_count+1)}
+    snap_ix={round(k*steps/10) for k in range(11)}
     current_jitter=rng.normal(0,req['ensemble_current_sd'],2) if req.get('ensemble_current_sd',0)>0 else np.zeros(2)
     wind_jitter=rng.normal(0,req['ensemble_wind_sd'],2) if req.get('ensemble_wind_sd',0)>0 else np.zeros(2)
 
@@ -103,17 +96,15 @@ def run_member(req, terrain, current_fn, wind_fn, seed, keep_frames=True):
         active=np.where(state[:n]==0)[0]
         vals,peak=summarize_bins(x[active],y[active],z[active],mass[active],kind)
         # Uniformly subsample render particles, without changing the mass budget.
-        render_limit=int(req.get('render_limit',1750))
-        if len(active)>render_limit:
-            use=rng.choice(len(active),render_limit,replace=False)
+        if len(active)>1750:
+            use=rng.choice(len(active),1750,replace=False)
         else:use=np.arange(len(active))
         pts=[[round(float(x[active[k]]),3),round(float(y[active[k]]),3),round(float(z[active[k]]),2),
-              round(float(vals[k]/peak),3) if peak>0 else 0.0, int(source_id[active[k]])] for k in use]
+              round(float(vals[k]/peak),3) if peak>0 else 0.0] for k in use]
         stranded=np.where(state[:n]==1)[0]
         if len(stranded)>350: stranded=rng.choice(stranded,350,replace=False)
         beaches=[[round(float(x[k]),3),round(float(y[k]),3),round(float(z[k]),2),0.0] for k in stranded]
-        extent=float(max((math.hypot(x[j]-sources[int(source_id[j])]['x'],
-                                    y[j]-sources[int(source_id[j])]['y']) for j in active),default=0))
+        extent=float(np.max(np.hypot(x[active]-lon0,y[active]-lat0))) if len(active) else 0.0
         return {'hour':round(t/3600,2),'points':pts,'beached':beaches,'peak':round(peak,7),
                 'spread_km':round(extent,3),'active_particles':len(active),'budget':mass_budget()}
 
@@ -122,18 +113,15 @@ def run_member(req, terrain, current_fn, wind_fn, seed, keep_frames=True):
         t=i*dt
         actual_dt=min(dt,3600*hours-t)
         if actual_dt<=0:break
-        for src_idx, source in enumerate(sources):
-            released_seconds=max(0,min((t+actual_dt),float(source['duration_h'])*3600)-t)
-            if released_seconds <= 0: continue
+        seconds_of_release=max(0,min((t+actual_dt),duration*3600)-t)
+        if seconds_of_release>0:
             count=pps
-            x[n:n+count]=source['x']+rng.normal(0,0.01,count)
-            y[n:n+count]=source['y']+rng.normal(0,0.01,count)
-            z[n:n+count]=-0.2 if surf else -source['depth_m']
-            injected=source['rate_kg_s']*released_seconds
+            x[n:n+count]=lon0+rng.normal(0,0.01,count)
+            y[n:n+count]=lat0+rng.normal(0,0.01,count)
+            z[n:n+count]= -0.2 if surf else -depth
+            injected=req['rate_kg_s']*seconds_of_release
             mass[n:n+count]=injected/count
-            source_id[n:n+count]=src_idx
-            released+=injected
-            n+=count
+            released+=injected;n+=count
         ids=np.where(state[:n]==0)[0]
         if len(ids):
             try:

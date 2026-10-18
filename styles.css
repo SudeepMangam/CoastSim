@@ -200,34 +200,3 @@ button:not(:disabled):active { transform: translateY(1px); }
 @media (prefers-reduced-motion: reduce) {
   button:not(:disabled) { transition: none; }
 }
-
-/* Cesium Ion display and additional release controls. */
-.cesiumHost { position: absolute; inset: 0; overflow: hidden; }
-.cesiumHost .cesium-viewer, .cesiumHost .cesium-widget, .cesiumHost .cesium-widget canvas { width: 100%; height: 100%; }
-.cesiumHost .cesium-viewer-bottom { bottom: 108px; }
-.layerHelp { font-size: 10px; color: var(--muted); line-height: 1.5; }
-.releaseHeading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; }
-.releaseHeading h3 { margin: 0; }
-.releaseHeading strong { color: #d6ebf2; font-size: 11px; }
-.releaseCard { border: 1px solid var(--line); padding: 10px 12px; margin: 11px 0; border-radius: 8px; background: #112b3b; }
-.apiError { display: grid; gap: 4px; margin: 8px 0; padding: 10px; background: rgba(107,55,52,.23); border: 1px solid rgba(199,105,98,.36); border-radius: 7px; word-break: break-word; }
-.apiError strong { font-size: 11px; color: #f2c7c2; }
-.apiError span { color: #d0b2af; font-size: 10px; line-height: 1.5; }
-
-.sceneLoading { position:absolute; inset:0; display:grid; place-items:center; font-size:12px; color:#b9d5e3; }
-.cesiumError { position:absolute; top:95px; left:22px; z-index:4; border:1px solid #8e5450; border-radius:9px; padding:12px; max-width:360px; background:#261e26; color:#f7d1cb; font-size:12px; }
-
-/* Direct, compact camera control: the globe is visible from an oblique 3D angle. */
-.viewAngleButton {
-  position: absolute; z-index: 4; top: 132px; left: 22px;
-  padding: 7px 10px; border: 1px solid rgba(132,177,195,.32);
-  border-radius: 7px; background: rgba(8,25,38,.8); color: #cde5f0;
-  font-size: 11px; font-weight: 690; backdrop-filter: blur(10px);
-}
-.viewAngleButton:hover, .resetViewMenuButton:hover { background: #23516a; }
-.resetViewMenuButton {
-  width: 100%; padding: 9px 10px; margin: 3px 0 7px;
-  background: rgba(36,82,102,.45); border: 1px solid var(--line);
-  border-radius: 7px; color: #d3eaf4; text-align: left; font-size: 11px;
-}
-@media (max-width: 900px) { .viewAngleButton { top: 106px; left: 12px; } }

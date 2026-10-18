@@ -1,6 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Scene from './Scene.jsx'
-const CesiumScene = lazy(() => import('./CesiumScene.jsx'))
 import { api } from './api.js'
 
 const PRESETS = {
@@ -61,7 +60,7 @@ function Metric({ label, value, unit }) {
 export default function App() {
   const [f, setF] = useState({
     pollutant: 'chemical', mode: 'forecast', lat: '18.49', lon: '-66.08',
-    rate_kg_s: '0.5', duration_h: '2', hours: '24', members: '8', particles_per_step: '2', render_limit: '1750', ...PRESETS.chemical,
+    rate_kg_s: '0.5', duration_h: '2', hours: '24', members: '8', ...PRESETS.chemical,
     diameter_mm: '0.5', density_kg_m3: '1050', settling_ms: '',
     manual_u: '0.15', manual_v: '0.03', manual_wind_u: '2', manual_wind_v: '-3',
     ensemble_current_sd: '0.02', ensemble_wind_sd: '0.2', seed: '42',
@@ -86,12 +85,6 @@ export default function App() {
   const [tab, setTab] = useState('scenario')
   const [layersOpen, setLayersOpen] = useState(false)
   const [edited, setEdited] = useState(false)
-  const cesiumToken = (import.meta.env.VITE_CESIUM_ION_TOKEN || '').trim()
-  const [viewMode, setViewMode] = useState(cesiumToken ? 'cesium' : 'local')
-  const [cesiumError, setCesiumError] = useState('')
-  const [cameraResetKey, setCameraResetKey] = useState(0)
-  const [releases, setReleases] = useState([])
-
 
   const set = (key, value) => { setF(old => ({ ...old, [key]: value })); setEdited(true) }
   const changePollutant = value => {
@@ -113,7 +106,6 @@ export default function App() {
     if (t.status === 'fulfilled') setTerrain(t.value)
     else setError(`Terrain request failed: ${t.reason.message}`)
     if (h.status === 'fulfilled') setHealth(h.value)
-    else setError(old => [old, `Backend health check failed: ${h.reason.message}`].filter(Boolean).join('\n'))
     if (c.status === 'fulfilled') setConditions(c.value)
     else setError(old => [old, `Ocean conditions request failed: ${c.reason.message}`].filter(Boolean).join('\n'))
     setLoading(false)
@@ -124,7 +116,7 @@ export default function App() {
     const timer = setInterval(() => setFrame(old => {
       if (old >= result.frames.length - 1) { setPlaying(false); return old }
       return old + 1
-    }), 400)
+    }), 750)
     return () => clearInterval(timer)
   }, [playing, result])
 
@@ -135,17 +127,8 @@ export default function App() {
       const payload = Object.fromEntries(Object.entries(f).map(([k, v]) => [
         k, ['mode', 'pollutant'].includes(k) ? v : (v === '' ? null : Number(v)),
       ]))
-      payload.additional_releases = releases.map(item => ({
-        lat: Number(item.lat), lon: Number(item.lon), depth_m: Number(item.depth_m),
-        rate_kg_s: Number(item.rate_kg_s), duration_h: Number(item.duration_h),
-      }))
       const next = await api.simulate(payload)
-      // Hour zero has no emitted mass in a continuous-release model.
-      // Display the first frame with real particles immediately, then animate.
-      const firstVisible = next.frames.findIndex(f => (f.points?.length || 0) + (f.beached?.length || 0) > 0)
-      const startAt = Math.max(0, firstVisible)
-      setResult(next); setFrame(startAt); setEdited(false)
-      setPlaying(firstVisible >= 0 && startAt < next.frames.length - 1)
+      setResult(next); setFrame(0); setEdited(false)
       setDrawerOpen(false)
     } catch (e) { setError(e.message); setDrawerOpen(true); setTab('scenario') }
     finally { setBusy(false) }
@@ -156,36 +139,12 @@ export default function App() {
   }
 
   const sceneFrame = result?.frames?.[frame]
-  const firstParticleFrame = result?.frames?.findIndex(
-    item => (item.points?.length || 0) + (item.beached?.length || 0) > 0
-  ) ?? -1
   const series = conditions?.forecast?.currents?.filter(v => v.u != null && v.v != null) || []
   const wind = conditions?.forecast?.wind?.filter(v => v.wind_speed_10m != null) || []
   const lastWater = conditions?.tides?.observed
   const future = series.find(x => new Date(x.time) >= new Date()) || null
   const forecastReady = !!series.length && (f.pollutant !== 'oil' || !!wind.length)
-  const releaseAmount = (+f.rate_kg_s) * Math.min(+f.hours, +f.duration_h) * 3600 +
-    releases.reduce((acc, item) => acc + Number(item.rate_kg_s) * Math.min(Number(f.hours), Number(item.duration_h)) * 3600, 0)
-  const addRelease = () => {
-    if (releases.length >= 4) return
-    const base = releases.length + 1
-    setReleases(old => [...old, { id: `${Date.now()}-${base}`, lat: (Number(f.lat) + 0.006 * base).toFixed(4), lon: (Number(f.lon) + 0.005 * base).toFixed(4), depth_m: f.depth_m, rate_kg_s: f.rate_kg_s, duration_h: f.duration_h }])
-    setEdited(true)
-  }
-  const updateRelease = (id, key, value) => { setReleases(old => old.map(item => item.id === id ? {...item, [key]: value} : item)); setEdited(true) }
-  const removeRelease = id => { setReleases(old => old.filter(item => item.id !== id)); setEdited(true) }
-  // Each upstream failure is reported separately. A 200 from /api/conditions does not mean all providers succeeded.
-  const dataErrors = [
-    ...(error ? [{source:'Application/API request',message:error}] : []),
-    ...(cesiumError ? [{source:'Cesium Ion',message:cesiumError}] : []),
-    ...(conditions?.forecast?.errors || []).map(message => ({source:'Ocean/wind forecast',message:String(message)})),
-    ...(conditions?.tides?.errors || []).map(message => ({source:'NOAA CO-OPS',message:String(message)})),
-    ...(conditions?.forecast?.error ? [{source:'Forecast endpoint',message:String(conditions.forecast.error)}] : []),
-    ...(conditions?.tides?.error ? [{source:'Water-level endpoint',message:String(conditions.tides.error)}] : []),
-    ...(radarError ? [{source:'CARICOOS HF radar',message:radarError}] : []),
-    ...(terrain?.status === 'synthetic' ? [{source:'NOAA bathymetry',message:'Real bathymetry unavailable. Fallback synthetic terrain is in use.'}] : []),
-  ]
-
+  const releaseAmount = (+f.rate_kg_s) * Math.min(+f.hours, +f.duration_h) * 3600
   const sources = result?.source_status
   const help = f.pollutant === 'oil'
     ? 'Floating surface oil with wind-driven transport and potential shoreline contact.'
@@ -200,15 +159,8 @@ export default function App() {
 
   return <div className="app">
     <div className="sceneStage">
-      {viewMode === 'cesium' && cesiumToken ?
-        <Suspense fallback={<div className="sceneLoading">Loading Cesium Ion globe…</div>}>
-          <CesiumScene token={cesiumToken} terrain={terrain} result={result} frame={sceneFrame} vex={vex}
-            showSurface={showSurface} showBounds={showBounds} showTerrain={showTerrain} currentArrow={currentVector}
-            onError={setCesiumError} cameraResetKey={cameraResetKey} />
-        </Suspense> :
-        <Scene terrain={terrain} result={result} frame={sceneFrame} vex={vex}
-          showSurface={showSurface} showBounds={showBounds} showTerrain={showTerrain} currentArrow={currentVector} />
-      }
+      <Scene terrain={terrain} result={result} frame={sceneFrame} vex={vex}
+        showSurface={showSurface} showBounds={showBounds} showTerrain={showTerrain} currentArrow={currentVector} />
     </div>
 
     <header className="floatingHeader" aria-label="Simulation toolbar">
@@ -231,16 +183,7 @@ export default function App() {
 
     {layersOpen && <section className="layersPopover" aria-label="3D scene layers">
       <div className="popoverTitle"><strong>Scene layers</strong><button type="button" onClick={() => setLayersOpen(false)} aria-label="Close layers">Close</button></div>
-      <label className="depthSelect">3D view
-        <select value={viewMode} onChange={e => { setViewMode(e.target.value); setCesiumError('') }}>
-          <option value="local">Local bathymetry</option>
-          <option value="cesium" disabled={!cesiumToken}>Cesium Ion globe</option>
-        </select>
-      </label>
-      {viewMode === 'cesium' && <button type="button" className="resetViewMenuButton"
-        onClick={() => { setCameraResetKey(old => old + 1); setLayersOpen(false) }}>Restore angled 3D camera</button>}
-      {!cesiumToken && <p className="layerHelp">Set VITE_CESIUM_ION_TOKEN in .env.local and restart Vite to enable Cesium Ion.</p>}
-      <label><input type="checkbox" checked={showTerrain} onChange={e => setShowTerrain(e.target.checked)} /> {viewMode === 'cesium' ? 'Bathymetry overlay' : 'Seabed'}</label>
+      <label><input type="checkbox" checked={showTerrain} onChange={e => setShowTerrain(e.target.checked)} /> Seabed</label>
       <label><input type="checkbox" checked={showSurface} onChange={e => setShowSurface(e.target.checked)} /> Water surface</label>
       <label><input type="checkbox" checked={showBounds} onChange={e => setShowBounds(e.target.checked)} /> Study boundaries</label>
       <label><input type="checkbox" checked={currentArrow} onChange={e => setCurrentArrow(e.target.checked)} /> Current direction</label>
@@ -250,8 +193,6 @@ export default function App() {
     </section>}
 
     <div className="orientationMark" aria-hidden="true"><span>N</span><span className="northLine" /></div>
-    {viewMode === 'cesium' && cesiumToken && <button type="button" className="viewAngleButton"
-      onClick={() => setCameraResetKey(old => old + 1)} title="Return to the angled 3D view">3D view</button>}
     {!result && <div className="canvasHint"><strong>Ready to simulate</strong><span>Choose a pollutant and configure its release.</span><button onClick={() => openTab('scenario')}>Open setup</button></div>}
     {result && <div className="miniLegend" aria-label="Particle concentration legend"><span>Relative bin concentration</span><div className="legendGradient"/><div className="legendEnds"><span>Low</span><span>High</span></div><small className="shoreLegend">Pale particles: shoreline contact</small></div>}
 
@@ -296,18 +237,6 @@ export default function App() {
               <NumberField label="Duration" value={f.duration_h} onChange={v => set('duration_h', v)} unit="h" min="0.1"/>
               <NumberField label="Simulation horizon" value={f.hours} onChange={v => set('hours', v)} unit="h" min="1" max="96"/>
               <NumberField label="Ensemble members" value={f.members} onChange={v => set('members', v)} unit="runs" min="1" max="24" step="1"/>
-              <NumberField label="Particles per emission step" value={f.particles_per_step} onChange={v => set('particles_per_step', v)} unit="/5 min" min="1" max="20" step="1" title="Higher counts produce a smoother plume and a slower backend calculation. Each release contributes this many particles per 5-minute step."/>
-              <NumberField label="Visible particle limit" value={f.render_limit} onChange={v => set('render_limit', v)} unit="points" min="100" max="10000" step="100" title="Controls display sampling; the backend keeps all simulated particles."/>
-              <div className="releaseHeading"><h3>Additional pollutant sources</h3><button type="button" className="textButton" onClick={addRelease} disabled={releases.length >= 4}>Add source</button></div>
-              <p className="helpText">Simulate up to five independent release locations of the selected pollutant type. Each source has its own mass rate and depth.</p>
-              {releases.map((item,i) => <div className="releaseCard" key={item.id}>
-                <div className="releaseHeading"><strong>Source {i+2}</strong><button type="button" className="textButton" onClick={()=>removeRelease(item.id)}>Remove</button></div>
-                <NumberField label="Latitude" value={item.lat} onChange={v=>updateRelease(item.id,'lat',v)} step="0.001" />
-                <NumberField label="Longitude" value={item.lon} onChange={v=>updateRelease(item.id,'lon',v)} step="0.001" />
-                <NumberField label="Depth" value={item.depth_m} onChange={v=>updateRelease(item.id,'depth_m',v)} unit="m" min="0.05" />
-                <NumberField label="Release rate" value={item.rate_kg_s} onChange={v=>updateRelease(item.id,'rate_kg_s',v)} unit="kg/s" min="0.0001" />
-                <NumberField label="Duration" value={item.duration_h} onChange={v=>updateRelease(item.id,'duration_h',v)} unit="h" min="0.1" />
-              </div>)}
               <div className="inputEstimate"><span>Maximum input mass</span><strong>{format(releaseAmount, 1)} kg</strong></div>
             </section>
             <section className="drawerSection"><details className="advancedSection"><summary>Advanced physics</summary>
@@ -351,16 +280,13 @@ export default function App() {
               <p className="sourceDetail">San Juan water-level measurements use an MLLW datum and are not directly applied to ETOPO EGM2008 elevations.</p>
               {terrain?.warnings?.map((warning, i) => <p key={i} className="inlineWarning">{warning}</p>)}
             </section>
-            <section className="drawerSection"><div className="inlineHeading"><h3>API diagnostics ({dataErrors.length})</h3><button type="button" className="textButton" onClick={() => save('coastsim-api-diagnostics.json', JSON.stringify({generated_at:new Date().toISOString(),errors:dataErrors,health,terrain_source:terrain?.source,conditions_retrieved_at:conditions?.retrieved_at},null,2))}>Export log</button></div>
-              {dataErrors.length ? dataErrors.map((item,i) => <div key={i} className="apiError"><strong>{item.source}</strong><span>{item.message}</span></div>) : <p className="helpText">No API failures reported by the current session. This does not guarantee the upstream feeds are fresh or scientifically adequate.</p>}
-            </section>
           </>}
           {tab === 'analysis' && <>
             {!result ? <div className="noResults"><h3>No simulation loaded</h3><p>Run a scenario to explore plume statistics, data provenance, and exports.</p><button className="textButton" onClick={() => setTab('scenario')}>Open scenario</button></div> : <>
               <section className="drawerSection firstSection"><h3>Current frame</h3>
                 <dl className="provenance"><dt>Peak concentration estimate</dt><dd>{format(sceneFrame?.peak, 4)} {result.concentration_unit || '—'}</dd><dt>Pollutant mass in water</dt><dd>{format(sceneFrame?.budget?.water_kg, 2)} kg</dd><dt>On shore</dt><dd>{format(sceneFrame?.budget?.beached_kg, 2)} kg</dd><dt>Removed / decayed</dt><dd>{format(sceneFrame?.budget?.decayed_kg, 2)} kg</dd></dl>
               </section>
-              <section className="drawerSection"><h3>Dispersion over time</h3><Spark values={result.frames?.map(a => a.spread_km)} label="Maximum spread from source (km)" /></section>
+              <section className="drawerSection"><h3>Dispersion over time</h3><Spark values={result.frames?.map(a => a.spread_km)} label="Maximum spread from release (km)" /></section>
               <section className="drawerSection"><h3>Model provenance</h3>
                 <dl className="provenance"><dt>Currents</dt><dd>{sources?.currents || '—'}</dd><dt>Wind</dt><dd>{sources?.wind || '—'}</dd><dt>Seabed</dt><dd>{sources?.terrain || terrain?.source || '—'}</dd>{sources?.forecast_start && <><dt>Forecast start</dt><dd>{localDate(sources.forecast_start)}</dd></>}</dl>
                 {sources?.warnings?.map((w, i) => <p key={i} className="inlineWarning">{w}</p>)}
@@ -379,8 +305,8 @@ export default function App() {
     <footer className="playbackDock">
       <div className="dockMain">
         <div className="playControls" role="group" aria-label="Simulation playback">
-          <button type="button" disabled={!result} title="Go to first frame" onClick={() => { setPlaying(false); setFrame(Math.max(0, firstParticleFrame)) }}>First</button>
-          <button type="button" disabled={!result} className="playButton" onClick={() => { if (result && frame === result.frames.length - 1) setFrame(Math.max(0, firstParticleFrame)); setPlaying(!playing) }}>{playing ? 'Pause' : 'Play'}</button>
+          <button type="button" disabled={!result} title="Go to first frame" onClick={() => { setPlaying(false); setFrame(0) }}>First</button>
+          <button type="button" disabled={!result} className="playButton" onClick={() => { if (result && frame === result.frames.length - 1) setFrame(0); setPlaying(!playing) }}>{playing ? 'Pause' : 'Play'}</button>
           <button type="button" disabled={!result} title="Next frame" onClick={() => { setPlaying(false); setFrame(Math.min((result?.frames.length || 1) - 1, frame + 1)) }}>Next</button>
         </div>
         <div className="timeBlock"><strong>{sceneFrame ? `+${format(sceneFrame.hour, 1)} h` : '0.0 h'}</strong><span>{result ? `${result.pollutant} · ${result.mode}${edited ? ' · Inputs changed' : ''}` : 'No simulation loaded'}</span></div>
