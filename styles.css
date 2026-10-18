@@ -219,78 +219,222 @@ button:not(:disabled):active { transform: translateY(1px); }
 @media(max-width:900px){ .cameraQuick {top:75px; right:12px;} .orbitHint {left:12px; top:75px; max-width:190px;} }
 @media(max-width:680px){ .orbitHint {display:none;} .cameraQuick {top:70px;} }
 
-/* ===== Visual polish layer (overrides above) ===== */
+/* CoastSim / quiet research UI — flat surfaces, deliberate hierarchy, minimal overlays. */
 :root {
-  --glass: linear-gradient(180deg, rgba(16, 40, 58, .80), rgba(8, 22, 34, .88));
-  --glass-line: rgba(160, 212, 232, .17);
-  --glass-shadow: 0 18px 50px rgba(0, 0, 0, .38), inset 0 1px 0 rgba(255, 255, 255, .06);
-  --accent-grad: linear-gradient(135deg, #b4eef7, #5fc3e0);
-  --shallow: #3dc7cc; --mid: #0d6bad; --deep: #051a47;
+  --bg: #0b1822;
+  --panel: #101d28;
+  --panel-solid: #101d28;
+  --soft: #152633;
+  --line: #2b404f;
+  --line-active: #709eac;
+  --text: #e6edf1;
+  --muted: #9aaeb9;
+  --accent: #a1c6cf;
+  --ok: #84b5a3;
+  --warn: #d0ad77;
 }
-.app { background: radial-gradient(120% 90% at 50% 0%, #11364a 0%, #08202f 55%, #050f18 100%); }
-.brandPanel, .headerActions, .playbackDock, .controlDrawer, .layersPopover, .canvasHint, .miniLegend, .orbitHint, .depthLegend, .depthProbe {
-  background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--glass-shadow);
-  backdrop-filter: blur(18px) saturate(150%); -webkit-backdrop-filter: blur(18px) saturate(150%);
+.app { background: #0b1822; }
+
+/* Use a single unadorned surface treatment throughout the tool. */
+.brandPanel, .headerActions, .playbackDock, .controlDrawer,
+.layersPopover, .depthLegend, .miniLegend, .cloudLegend, .releaseToolbar {
+  background: rgba(13, 26, 36, .96);
+  border: 1px solid #304450;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .20);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-radius: 8px;
 }
-.brandGlyph { background: var(--accent-grad); box-shadow: 0 4px 14px rgba(95, 195, 224, .35); }
-.brandText strong { font-size: 15px; letter-spacing: -.02em; }
-.toolbarButton { border-radius: 8px; letter-spacing: .01em; }
-.toolbarButton:hover, .toolbarButton[aria-expanded="true"] { background: rgba(140, 219, 239, .14); border-color: var(--glass-line); }
-.primaryToolbar, .runFromDrawer { background: var(--accent-grad); box-shadow: 0 6px 18px rgba(95, 195, 224, .30); }
-.primaryToolbar:hover:not(:disabled), .runFromDrawer:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
-.drawerTitle h2 { font-size: 19px; }
-.drawerSection h3 { color: #8fd2e6; letter-spacing: .14em; }
-.choice button.active { background: linear-gradient(180deg, #1f4a5e, #173a4b); border-color: #7fd0e6; box-shadow: 0 0 0 3px rgba(127, 208, 230, .10); }
-.fieldControl input:focus { border-color: #7fd0e6; outline: 0; box-shadow: 0 0 0 3px rgba(127, 208, 230, .16); }
-.controlDrawer, .drawerBody { scrollbar-color: #3c6176 transparent; }
-.timeBlock strong { font-size: 17px; letter-spacing: -.01em; }
-.metric strong { font-size: 15px; }
-.playControls .playButton { background: var(--accent-grad); border-color: transparent; }
+.brandPanel, .headerActions { min-height: 46px; }
+.brandGlyph {
+  width: 25px; height: 25px;
+  color: #b1d0d9; background: #203642;
+  border: 1px solid #3c5d69; border-radius: 5px;
+  font-size: 14px; box-shadow: none;
+}
+.brandText strong { font-size: 14px; font-weight: 650; letter-spacing: -.025em; }
+.brandText span { font-size: 10px; }
+.domainSize { font-size: 10px; color: #91a9b4; }
+.floatingHeader { top: 16px; }
+.headerActions { gap: 4px; }
+.toolbarButton {
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font-weight: 550; letter-spacing: 0;
+  font-size: 12px; padding: 9px 12px;
+  color: #d4e1e7;
+}
+.toolbarButton:hover, .toolbarButton[aria-expanded="true"] {
+  background: #1f3440; border-color: #354f5c;
+}
+.primaryToolbar, .runFromDrawer, .playControls .playButton {
+  color: #102530;
+  background: #9bc6d1;
+  border-color: #9bc6d1;
+  box-shadow: none;
+  font-weight: 650;
+  transform: none;
+}
+.primaryToolbar:hover:not(:disabled), .runFromDrawer:hover:not(:disabled),
+.playControls .playButton:hover:not(:disabled) {
+  background: #b3d3db;
+  border-color: #b3d3db;
+  transform: none;
+  filter: none;
+}
 
-/* Layer panel: switches instead of checkboxes */
-.layersPopover { width: 252px; border-radius: 14px; }
-.layersPopover label:not(.depthSelect) { flex-direction: row-reverse; justify-content: space-between; }
-.layersPopover input[type="checkbox"] { appearance: none; -webkit-appearance: none; flex: 0 0 auto; width: 30px; height: 17px; border-radius: 99px; background: #27495a; position: relative; cursor: pointer; transition: background .18s ease; }
-.layersPopover input[type="checkbox"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #d9eef6; transition: transform .18s ease; }
-.layersPopover input[type="checkbox"]:checked { background: #3aa9c8; }
-.layersPopover input[type="checkbox"]:checked::after { transform: translateX(13px); }
+/* Small release placement controls are the only extra control near the header. */
+.releaseToolbar {
+  top: 76px; left: 22px;
+  padding: 5px 7px;
+  gap: 7px;
+  color: #acbdc7;
+  box-shadow: 0 5px 18px rgba(0,0,0,.16);
+}
+.releaseToolbar label { font-size: 11px; color: #a5b6bf; }
+.releaseToolbar select, .releaseToolbar button {
+  color: #dce8ed; background: #1a2e3a;
+  border: 1px solid #395361;
+  border-radius: 5px; font-size: 11px; padding: 6px 8px;
+}
+.releaseToolbar button.active { background: #4a402a; border-color: #aa935c; color: #f2df9a; }
 
-/* Timeline slider */
-.scrubRow input[type="range"] { appearance: none; -webkit-appearance: none; height: 6px; border-radius: 99px; background: linear-gradient(90deg, #3ab4d2, #1f6c8a); }
-.scrubRow input[type="range"]::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%; background: #e9fbff; border: 2px solid #3ab4d2; box-shadow: 0 2px 8px rgba(0, 0, 0, .4); }
-.scrubRow input[type="range"]::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: #e9fbff; border: 2px solid #3ab4d2; }
+/* Layer controls: short top-level choices; detail settings are expandable. */
+.layersPopover {
+  right: 155px; top: 75px;
+  width: 300px;
+  max-height: min(680px, calc(100dvh - 100px));
+  padding: 16px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: #3a515f transparent;
+}
+.popoverTitle { margin-bottom: 16px; }
+.popoverTitle strong { font-size: 13px; font-weight: 650; }
+.popoverTitle button, .closeButton { font-size: 11px; color: #9fb4be; }
+.panelLabel { font-size: 11px; color: #a9bbc3; margin-bottom: 8px; }
+.plumeChoice { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 0 0 10px; }
+.plumeChoice button, .cameraChoice button, .applyAreaButton, .resetAreaButton {
+  border: 1px solid #354c59;
+  color: #c4d4dd; background: #192d39;
+  border-radius: 5px; padding: 9px 7px; font-size: 11px;
+  font-weight: 550; box-shadow: none;
+}
+.plumeChoice button.selected { color: #eaf2f5; background: #2a4857; border-color: #87aeb9; }
+.plumeChoice button:hover, .cameraChoice button:hover { background: #2a424f; }
+.layerDetails { border-top: 1px solid #29404d; }
+.layerDetails > summary {
+  list-style: none; display: flex; justify-content: space-between; align-items: center;
+  cursor: pointer; user-select: none;
+  padding: 14px 0; color: #c9d8df; font-size: 12px; font-weight: 600;
+}
+.layerDetails > summary::-webkit-details-marker { display: none; }
+.layerDetails > summary::after { content: '+'; font-size: 16px; font-weight: 400; color: #97abb5; }
+.layerDetails[open] > summary::after { content: '−'; }
+.layerDetailsBody { padding: 0 0 12px; }
+.layersPopover .layerDetailsBody > label {
+  display: flex; flex-direction: row-reverse; justify-content: space-between; gap: 10px;
+  padding: 7px 0; color: #b9cbd3; font-size: 11.5px;
+}
+.layersPopover input[type="checkbox"] {
+  appearance: auto; -webkit-appearance: checkbox;
+  width: 14px; height: 14px; flex: 0 0 auto;
+  accent-color: #84bbc6; cursor: pointer;
+}
+.layersPopover .layerDetailsBody > label.areaField,
+.layersPopover .layerDetailsBody > label.depthSelect {
+  flex-direction: row; justify-content: space-between;
+}
+.areaField input {
+  width: 100px; background: #162a36; color: #dce7ed;
+  border: 1px solid #3d5562; border-radius: 5px;
+  text-align: right; padding: 6px;
+}
+.layersPopover select { background: #162a36; border: 1px solid #3d5562; color: #dce7ed; }
+.cameraChoice { padding: 0 0 8px; }
+.layersPopover .applyAreaButton { width: 100%; margin-top: 12px; color: #102530; background: #9bc6d1; border-color: #9bc6d1; }
+.layersPopover .resetAreaButton { width: 100%; margin-top: 5px; background: transparent; border-color: transparent; color: #a0bcc7; }
+.layerNote { margin: 6px 0; color: #8fa7b2; font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
+.panelTextButton { border: 0; background: transparent; padding: 8px 0 0; color: #a1c6cf; font-size: 11px; }
+.panelHelp { border-top: 1px solid #29404d; padding-top: 13px; margin: 0; font-size: 10px; line-height: 1.5; color: #829eaa; }
 
-/* Depth legend + hover readout */
-.depthLegend { position: absolute; z-index: 3; right: 22px; bottom: 126px; width: 214px; padding: 11px 13px 10px; border-radius: 12px; }
-.depthLegend > span { display: block; margin-bottom: 9px; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #8fd2e6; }
-.depthBar { position: relative; height: 8px; border-radius: 99px; background: linear-gradient(90deg, var(--shallow) 0%, var(--mid) 45%, var(--deep) 100%); margin-bottom: 18px; }
-.depthBar i { position: absolute; top: 0; width: 1px; height: 12px; background: rgba(230, 248, 255, .75); }
-.depthBar i b { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); font-size: 9px; font-weight: 500; font-style: normal; color: #9fc0cf; white-space: nowrap; }
-.depthLegend .legendEnds { margin-top: 0; }
-.depthLegend small { display: block; margin-top: 8px; font-size: 9px; line-height: 1.5; color: #86a4b4; }
-.depthProbe { position: absolute; z-index: 6; pointer-events: none; padding: 7px 10px; border-radius: 9px; font-size: 11px; color: #bcd6e2; white-space: nowrap; }
-.depthProbe strong { color: #f1fbff; font-size: 13px; font-variant-numeric: tabular-nums; margin-right: 3px; }
-@media (max-width: 900px) { .depthLegend { right: 12px; bottom: 119px; width: 180px; } .depthLegend small { display: none; } }
-@media (max-width: 680px) { .depthLegend { display: none; } }
+/* Secondary information is compact and shown on demand. */
+.depthLegend { right: 22px; bottom: 113px; width: 207px; padding: 12px; }
+.depthLegend > span { color: #c5d5dc; font-size: 10px; letter-spacing: 0; font-weight: 600; text-transform: none; }
+.depthBar { background: linear-gradient(90deg, #3dc7cc, #0d6bad, #051a47); }
+.depthBar i b { color: #b2c4cc; }
+.miniLegend, .cloudLegend { left: 22px; bottom: 113px; padding: 12px; width: 213px; }
+.miniLegend > span { color: #c5d5dc; font-size: 10px; }
+.cloudLegend strong { color: #d9e5eb; font-size: 11px; font-weight: 600; }
+.cloudLegend small { color: #90a7b3; margin-top: 7px; font-size: 10px; line-height: 1.4; }
+.cloudScale { margin-top: 10px; height: 6px; border-radius: 4px; }
 
-.layerNote { margin: 8px 0 2px; padding-top: 10px; border-top: 1px solid var(--glass-line); font-size: 10px; line-height: 1.55; color: #8fb0c0; }
+/* Flat, legible settings and results panel. */
+.controlDrawer { right: 22px; top: 76px; bottom: 115px; width: min(370px, calc(100vw - 44px)); }
+.drawerTitle { padding: 18px 19px 14px; }
+.panelEyebrow { display: none; }
+.drawerTitle h2 { color: #edf1f3; font-size: 17px; font-weight: 650; letter-spacing: -.02em; }
+.drawerTabs button { font-size: 12px; font-weight: 550; }
+.drawerTabs button.selected { color: #e2edf2; border-bottom-color: #93bdc8; }
+.drawerSection h3 { color: #afc2cb; font-size: 11px; letter-spacing: 0; text-transform: none; font-weight: 650; }
+.choice button { background: #152a36; border-color: #344b58; color: #aec0cb; }
+.choice button.active { background: #294653; border-color: #84acb8; box-shadow: none; }
+.inputGroup, .advancedInner { background: #152733; }
+.fieldControl input, .wideSelect, .releaseCard, .inputEstimate {
+  background: #152936; border-color: #344e5c;
+}
+.fieldControl input:focus { border-color: #8ebbc6; box-shadow: none; }
+.drawerFooter { background: #101f2a; }
+.playControls button { background: #192e3a; border-color: #36515e; font-weight: 550; }
 
-/* Interactive release, cloud modes and constrained study-area setup */
-.layersPopover { width: 292px; max-height: calc(100dvh - 170px); overflow-y: auto; right: 120px; }
-.layersPopover .areaField { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 4px 0; }
-.areaField input { width: 104px; padding: 6px; text-align: right; color: #eef8fb; border: 1px solid #426476; border-radius: 6px; background: #0a202f; }
-.layerGroupTitle { color: #8cd9ee; font-size: 10px; font-weight: 750; letter-spacing: .12em; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); text-transform: uppercase; }
-.plumeChoice { display: flex; gap: 7px; margin-top: 10px; }
-.plumeChoice button, .applyAreaButton, .resetAreaButton { flex: 1; border-radius: 7px; padding: 8px 6px; border: 1px solid #416073; background: #102c3d; color: #d7f2fb; font-size: 11px; }
-.plumeChoice button.selected, .applyAreaButton { background: #27738c; border-color: #86d9eb; color: #fff; }
-.layersPopover .applyAreaButton { width: 100%; margin-top: 9px; }
-.layersPopover .resetAreaButton { width: 100%; margin-top: 5px; background: transparent; }
-.releaseToolbar { position: absolute; z-index: 4; top: 88px; left: 22px; display: flex; align-items: center; gap: 7px; background: rgba(8, 25, 38, .88); border: 1px solid var(--line); border-radius: 9px; padding: 7px; font-size: 11px; box-shadow: 0 10px 24px #0005; }
-.releaseToolbar select { color: white; background: #102e40; border: 1px solid #456879; border-radius: 5px; padding: 5px; }
-.releaseToolbar button { color: #f7e8a5; background: #12364a; border: 1px solid #937e41; border-radius: 5px; padding: 6px; font-size: 11px; }
-.releaseToolbar button.active { background: #715d29; }
-.cloudLegend { position: absolute; z-index: 3; left: 22px; bottom: 126px; width: 230px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: rgba(7, 25, 39, .92); box-shadow: 0 14px 34px #0007; }
-.cloudLegend strong { font-size: 11px; color: #d9edf6; }
-.cloudLegend small { display: block; margin-top: 8px; font-size: 9px; line-height: 1.6; color: #abc2d0; }
-.cloudScale { margin-top: 9px; height: 9px; border-radius: 6px; background: linear-gradient(90deg, #001c79, #1060e4, #44dbcc, #ffe04d, #ed1c24); }
-@media(max-width: 760px) { .releaseToolbar { top: 140px; left: 12px; } .layersPopover { right: 12px; } }
+/* Playback should read like a transport-control bar, not a dashboard. */
+.playbackDock { left: 22px; right: 22px; bottom: 16px; padding: 11px 15px 10px; }
+.dockMain { gap: 12px; }
+.dockMetrics { justify-content: flex-end; }
+.metric { padding: 0 15px; max-width: 130px; }
+.metric > span { font-size: 10px; }
+.metric strong { font-size: 13px; font-weight: 650; }
+.timeBlock strong { font-size: 15px; font-weight: 650; }
+.timeBlock > span { font-size: 10px; }
+.resultsLink { color: #b3ced7; font-weight: 600; }
+.scrubRow input[type=range] { accent-color: #91bfc9; }
+.scrubRow input[type="range"] { background: #304856; }
+.scrubRow input[type="range"]::-webkit-slider-thumb { background: #e0eaee; border: 1px solid #8bb4c0; box-shadow: none; }
+
+@media (max-width: 900px) {
+  .floatingHeader { left: 12px; right: 12px; top: 12px; }
+  .releaseToolbar { top: 70px; left: 12px; }
+  .layersPopover { right: 12px; top: 68px; }
+  .controlDrawer { right: 12px; top: 68px; bottom: 105px; }
+  .playbackDock { left: 12px; right: 12px; bottom: 12px; }
+  .miniLegend, .cloudLegend { left: 12px; bottom: 106px; }
+  .depthLegend { right: 12px; bottom: 106px; }
+  .metric { padding: 0 8px; }
+  .dockMetrics .metric:nth-child(3) { display: flex; }
+}
+@media (max-width: 680px) {
+  .brandPanel { min-height: 40px; padding: 7px 9px; }
+  .headerActions { min-height: 40px; padding: 4px; }
+  .headerActions .toolbarButton, .headerActions .toolbarButton:first-child,
+  .headerActions .toolbarButton:nth-child(2) { display: inline-flex; font-size: 11px; padding: 8px 7px; }
+  .domainSize, .headerDivider { display: none; }
+  .releaseToolbar { top: 64px; max-width: calc(100vw - 24px); }
+  .releaseToolbar label { display: none; }
+  .layersPopover { top: 62px; right: 12px; width: min(300px, calc(100vw - 24px)); max-height: calc(100dvh - 150px); }
+  .controlDrawer { width: calc(100vw - 24px); top: 62px; bottom: 104px; }
+  .playbackDock { padding: 9px 10px; }
+  .dockMain { gap: 8px; }
+  .timeBlock { flex-basis: 90px; }
+  .dockMetrics .metric { display: none; }
+  .dockMetrics { flex: 0 0 auto; margin-left: auto; }
+  .resultsLink { padding: 8px 2px; }
+  .miniLegend, .cloudLegend { bottom: 107px; width: 190px; }
+  .depthLegend { display: none; }
+}
+@media (max-width: 420px) {
+  .brandGlyph { display: none; }
+  .brandPanel { gap: 5px; }
+  .brandText span { display: none; }
+  .headerActions { gap: 0; }
+  .headerActions .toolbarButton { padding: 8px 5px; font-size: 10px; }
+  .playControls button { min-width: 34px; padding: 7px 6px; }
+  .timeBlock > span { display: none; }
+}

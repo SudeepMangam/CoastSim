@@ -107,6 +107,7 @@ export default function App() {
   const [showVegetation, setShowVegetation] = useState(true)
   const [showContours, setShowContours] = useState(true)
   const [showCurtains, setShowCurtains] = useState(true)
+  const [showDepthLegend, setShowDepthLegend] = useState(false)
   const maxDepth = useMemo(() => { if (!terrain?.h) return 0; let m = 0; for (const v of terrain.h) if (v < m) m = v; return Math.max(50, -m) }, [terrain])
   const [releases, setReleases] = useState([])
 
@@ -243,8 +244,6 @@ export default function App() {
   const currentVector = !currentArrow ? null : f.mode === 'forecast' && future
     ? [future.u, future.v] : f.mode === 'manual'
       ? [Number(f.manual_u), Number(f.manual_v)] : null
-  const topSource = loading ? 'Loading ocean data' : terrain?.status === 'synthetic'
-    ? 'Synthetic seabed' : terrain ? 'NOAA seabed' : 'Seabed unavailable'
 
   return <div className="app">
     <div className="sceneStage">
@@ -265,77 +264,88 @@ export default function App() {
         <span className="domainSize">{area.width_km} × {area.height_km} km{maxDepth ? ` · ${Math.round(maxDepth).toLocaleString()} m deep` : ''}</span>
       </div>
       <nav className="headerActions" aria-label="Application controls">
-        <span className={`sourceBadge ${terrain?.status === 'synthetic' || !terrain ? 'sourceWarn' : 'sourceOk'}`} title="Seafloor data source">
-          <span className="statusDot" />{topSource}
-        </span>
-        <button type="button" className="toolbarButton" onClick={() => openTab('data')}>Data</button>
         <button type="button" className="toolbarButton" aria-expanded={layersOpen} onClick={() => { setLayersOpen(x => !x); setDrawerOpen(false) }}>Layers</button>
         <button type="button" className="toolbarButton" aria-expanded={drawerOpen} onClick={() => { setDrawerOpen(x => !x); setTab('scenario'); setLayersOpen(false) }}>Configure</button>
         <button type="button" className="toolbarButton primaryToolbar" disabled={busy || areaBusy || loading || !terrain} onClick={run}>{busy ? 'Simulating…' : 'Run simulation'}</button>
       </nav>
     </header>
 
-    {layersOpen && <section className="layersPopover" aria-label="3D scene layers">
-      <div className="popoverTitle"><strong>Scene layers</strong><button type="button" onClick={() => setLayersOpen(false)} aria-label="Close layers">Close</button></div>
-      <div className="cameraChoice" role="group" aria-label="Camera presets">
-        <button type="button" onClick={() => {setCameraMode('coast');setCameraResetKey(x=>x+1);setLayersOpen(false)}}>Focus coast</button>
-        <button type="button" onClick={() => {setCameraMode('block');setCameraResetKey(x=>x+1);setLayersOpen(false)}}>Full block</button>
-      </div>
-      <label><input type="checkbox" checked={showTerrain} onChange={e => setShowTerrain(e.target.checked)} /> Seabed and coastline</label>
-      <label><input type="checkbox" checked={showBuildings} onChange={e => setShowBuildings(e.target.checked)} /> {geo?.status === 'osm' ? 'Buildings (OpenStreetMap)' : 'Illustrative buildings'}</label>
-      <label><input type="checkbox" checked={showVegetation} onChange={e => setShowVegetation(e.target.checked)} /> Vegetation</label>
-      <label><input type="checkbox" checked={showSurface} onChange={e => setShowSurface(e.target.checked)} /> Water surface</label>
-      <label><input type="checkbox" checked={showContours} onChange={e => setShowContours(e.target.checked)} /> Depth contours</label>
-      <label><input type="checkbox" checked={showCurtains} onChange={e => setShowCurtains(e.target.checked)} /> Water column sides</label>
-      <div className="layerGroupTitle">Plume display</div>
+    {layersOpen && <section className="layersPopover" aria-label="3D scene settings">
+      <div className="popoverTitle"><strong>View settings</strong><button type="button" onClick={() => setLayersOpen(false)} aria-label="Close view settings">Close</button></div>
+      <div className="panelLabel">Plume view</div>
       <div className="plumeChoice" role="group" aria-label="Plume display mode">
-        <button type="button" className={plumeMode === 'particles' ? 'selected' : ''} onClick={() => setPlumeMode('particles')}>Particles</button>
-        <button type="button" className={plumeMode === 'cloud' ? 'selected' : ''} onClick={() => setPlumeMode('cloud')}>3D cloud</button>
+        <button type="button" aria-pressed={plumeMode === 'particles'} className={plumeMode === 'particles' ? 'selected' : ''} onClick={() => setPlumeMode('particles')}>Particles</button>
+        <button type="button" aria-pressed={plumeMode === 'cloud'} className={plumeMode === 'cloud' ? 'selected' : ''} onClick={() => setPlumeMode('cloud')}>Concentration cloud</button>
       </div>
-      <div className="layerNote">Cloud colors show an kernel-smoothed, mass-weighted concentration in model bins, not measured contamination.</div>
-      <div className="layerGroupTitle">Study area</div>
-      <label className="areaField">Center latitude<input type="number" step="0.001" min="18.40" max="18.56" value={areaDraft.center_lat} onChange={e => setAreaDraft(old => ({ ...old, center_lat: e.target.value }))}/></label>
-      <label className="areaField">Center longitude<input type="number" step="0.001" min="-66.17" max="-65.99" value={areaDraft.center_lon} onChange={e => setAreaDraft(old => ({ ...old, center_lon: e.target.value }))}/></label>
-      <label className="areaField">Width (km)<input type="number" step="0.5" min="5" max="24" value={areaDraft.width_km} onChange={e => setAreaDraft(old => ({ ...old, width_km: e.target.value }))}/></label>
-      <label className="areaField">Length (km)<input type="number" step="0.5" min="5" max="24" value={areaDraft.height_km} onChange={e => setAreaDraft(old => ({ ...old, height_km: e.target.value }))}/></label>
-      <button className="applyAreaButton" type="button" disabled={areaBusy || busy} onClick={applyArea}>{areaBusy ? 'Loading area…' : 'Apply study area'}</button>
-      <button className="resetAreaButton" type="button" onClick={() => setAreaDraft(DEFAULT_AREA)}>Reset size &amp; center</button>
-      <label><input type="checkbox" checked={showBounds} onChange={e => setShowBounds(e.target.checked)} /> Study boundaries</label>
-      <label><input type="checkbox" checked={currentArrow} onChange={e => setCurrentArrow(e.target.checked)} /> Current direction</label>
-      <div className="layerNote">Seabed &amp; land: {terrain?.source || 'loading'}.<br />Buildings &amp; land cover: {geo?.status === 'osm' ? `OpenStreetMap, ${geo.buildings.length.toLocaleString()} of ${geo.building_count_total.toLocaleString()} footprints` : geo ? 'OpenStreetMap unavailable, so buildings are illustrative only' : 'loading'}.</div>
-      <label className="depthSelect">Visual depth exaggeration
-        <select value={vex} onChange={e => setVex(+e.target.value)}><option value="1">1×</option><option value="3">3×</option><option value="4">4×</option><option value="8">8×</option></select>
-      </label>
+      <details className="layerDetails" open>
+        <summary>Visible layers</summary>
+        <div className="layerDetailsBody">
+          <label><input type="checkbox" checked={showTerrain} onChange={e => setShowTerrain(e.target.checked)} /> Terrain &amp; coastline</label>
+          <label><input type="checkbox" checked={showBuildings} onChange={e => setShowBuildings(e.target.checked)} /> Buildings</label>
+          <label><input type="checkbox" checked={showVegetation} onChange={e => setShowVegetation(e.target.checked)} /> Vegetation</label>
+          <label><input type="checkbox" checked={showSurface} onChange={e => setShowSurface(e.target.checked)} /> Water surface</label>
+          <label><input type="checkbox" checked={showContours} onChange={e => setShowContours(e.target.checked)} /> Depth contours</label>
+          <label><input type="checkbox" checked={showCurtains} onChange={e => setShowCurtains(e.target.checked)} /> Water column sides</label>
+          <label><input type="checkbox" checked={showDepthLegend} onChange={e => setShowDepthLegend(e.target.checked)} /> Depth legend</label>
+        </div>
+      </details>
+      <details className="layerDetails">
+        <summary>Camera &amp; scale</summary>
+        <div className="layerDetailsBody">
+          <div className="cameraChoice" role="group" aria-label="Camera presets">
+            <button type="button" onClick={() => {setCameraMode('coast');setCameraResetKey(x=>x+1);setLayersOpen(false)}}>Coast view</button>
+            <button type="button" onClick={() => {setCameraMode('block');setCameraResetKey(x=>x+1);setLayersOpen(false)}}>Full block</button>
+          </div>
+          <label><input type="checkbox" checked={showBounds} onChange={e => setShowBounds(e.target.checked)} /> Study boundaries</label>
+          <label><input type="checkbox" checked={currentArrow} onChange={e => setCurrentArrow(e.target.checked)} /> Current direction</label>
+          <label className="depthSelect">Vertical exaggeration
+            <select value={vex} onChange={e => setVex(+e.target.value)}><option value="1">1×</option><option value="3">3×</option><option value="4">4×</option><option value="8">8×</option></select>
+          </label>
+        </div>
+      </details>
+      <details className="layerDetails">
+        <summary>Study area</summary>
+        <div className="layerDetailsBody">
+          <label className="areaField">Center latitude<input type="number" step="0.001" min="18.40" max="18.56" value={areaDraft.center_lat} onChange={e => setAreaDraft(old => ({ ...old, center_lat: e.target.value }))}/></label>
+          <label className="areaField">Center longitude<input type="number" step="0.001" min="-66.17" max="-65.99" value={areaDraft.center_lon} onChange={e => setAreaDraft(old => ({ ...old, center_lon: e.target.value }))}/></label>
+          <label className="areaField">Width (km)<input type="number" step="0.5" min="5" max="24" value={areaDraft.width_km} onChange={e => setAreaDraft(old => ({ ...old, width_km: e.target.value }))}/></label>
+          <label className="areaField">Length (km)<input type="number" step="0.5" min="5" max="24" value={areaDraft.height_km} onChange={e => setAreaDraft(old => ({ ...old, height_km: e.target.value }))}/></label>
+          <button className="applyAreaButton" type="button" disabled={areaBusy || busy} onClick={applyArea}>{areaBusy ? 'Loading area…' : 'Apply area'}</button>
+          <button className="resetAreaButton" type="button" onClick={() => setAreaDraft(DEFAULT_AREA)}>Reset to San Juan default</button>
+        </div>
+      </details>
+      <details className="layerDetails">
+        <summary>Data sources</summary>
+        <div className="layerDetailsBody">
+          <p className="layerNote">Terrain: {terrain?.source || 'Not loaded'}</p>
+          <p className="layerNote">Buildings: {geo?.status === 'osm' ? `OpenStreetMap (${geo.buildings.length.toLocaleString()} footprints)` : geo ? 'Illustrative / OSM unavailable' : 'Not loaded'}</p>
+          <button type="button" className="panelTextButton" onClick={() => openTab('data')}>Open data details →</button>
+        </div>
+      </details>
+      <p className="panelHelp">Drag to rotate · Right-drag to pan · Scroll to zoom</p>
     </section>}
 
-    {showSurface && terrain && !drawerOpen && <div className="depthLegend" aria-label="Water depth legend">
+    {showSurface && showDepthLegend && terrain && !drawerOpen && <div className="depthLegend" aria-label="Water depth legend">
       <span>Water depth</span>
       <div className="depthBar">{[50, 250, 1000].filter(d => d < maxDepth).map(d => <i key={d} style={{ left: `${Math.sqrt(d / maxDepth) * 100}%` }}><b>{d >= 1000 ? `${d / 1000} km` : `${d} m`}</b></i>)}</div>
       <div className="legendEnds"><span>0 m</span><span>{Math.round(maxDepth).toLocaleString()} m</span></div>
-      <small>Colour scale is compressed so nearshore depth stays readable. Lines at 10, 25, 50, 100, 250, 500 and 1,000 m. Hover the seabed to read depth.</small>
     </div>}
 
     <div className="releaseToolbar">
-      <label htmlFor="placeSource">Move source</label>
+      <label htmlFor="placeSource">Source</label>
       <select id="placeSource" value={Math.min(selectedRelease, releases.length)} onChange={e => setSelectedRelease(+e.target.value)}>
         <option value={0}>Primary</option>
         {releases.map((item, i) => <option key={item.id} value={i + 1}>Source {i + 2}</option>)}
       </select>
-      <button type="button" className={placingRelease ? 'active' : ''} onClick={() => setPlacingRelease(x => !x)}>{placingRelease ? 'Cancel placement' : 'Click water to place'}</button>
+      <button type="button" className={placingRelease ? 'active' : ''} onClick={() => setPlacingRelease(x => !x)}>{placingRelease ? 'Cancel' : 'Place on map'}</button>
     </div>
-    <div className="orbitHint">Drag yellow markers to move · Left drag to rotate elsewhere · Right drag to pan</div>
-    <div className="cameraQuick" aria-label="Camera controls">
-      <button type="button" title="Zoom to San Juan coast" onClick={() => {setCameraMode('coast');setCameraResetKey(x=>x+1)}}>Focus coast</button>
-      <button type="button" title="Show the whole block" onClick={() => {setCameraMode('block');setCameraResetKey(x=>x+1)}}>Full block</button>
-    </div>
-    {!result && <div className="canvasHint"><strong>Ready to simulate</strong><span>Choose a pollutant and configure its release.</span><button onClick={() => openTab('scenario')}>Open setup</button></div>}
-    {result && plumeMode === 'particles' && <div className="miniLegend" aria-label="Particle concentration legend"><span>Relative bin concentration</span><div className="legendGradient"/><div className="legendEnds"><span>Low</span><span>High</span></div><small className="shoreLegend">Pale particles: shoreline contact</small></div>}
+    {result && plumeMode === 'particles' && <div className="miniLegend" aria-label="Particle concentration legend"><span>Relative particle density</span><div className="legendGradient"/><div className="legendEnds"><span>Low</span><span>High</span></div></div>}
 
     {result && plumeMode === 'cloud' && <div className="cloudLegend">
-      <strong>3D concentration estimate</strong>
+      <strong>Estimated concentration</strong>
       <div className="cloudScale"/>
       <div className="legendEnds"><span>0</span><span>{format(sceneFrame?.cloud_peak || 0, 6)} {result.concentration_unit}</span></div>
-      <small>Colors are relative to this frame. {result.concentration_unit} · kernel-smoothed particle-bin estimate, not field-validated. Voxel size: 350 m × 350 m × 8 m (oil: surface).</small>
+      <small>Model estimate, not validated against field measurements.</small>
     </div>}
     {drawerOpen && <>
       <button type="button" className="drawerScrim" aria-label="Close panel" onClick={() => setDrawerOpen(false)}/>
@@ -469,7 +479,6 @@ export default function App() {
         <div className="dockMetrics">
           <Metric label="In water" value={format(sceneFrame?.budget?.water_kg, 1)} unit="kg" />
           <Metric label="On shore" value={format(sceneFrame?.budget?.beached_kg, 1)} unit="kg" />
-          <Metric label="Removed" value={format(sceneFrame?.budget?.decayed_kg, 1)} unit="kg" />
           <Metric label="Spread" value={format(sceneFrame?.spread_km)} unit="km" />
           <button type="button" className="resultsLink" onClick={() => openTab('analysis')}>Details</button>
         </div>
